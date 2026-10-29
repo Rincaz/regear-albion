@@ -946,7 +946,7 @@
     var body = $('#bt-body'), foot = $('#bt-foot'), d = bt.data;
     if (!d) {
       body.innerHTML = (proxyChecked && !proxyOn ? '<p class="bt-empty bt-warn">No hay puente hacia la API de Albion, así que el navegador bloqueará la consulta. Ejecuta <code>npm start</code> en la carpeta del proyecto, publica la función <code>albion-proxy</code> en Supabase (ver README) o usa «Pegar el JSON de la pelea».</p>' : '') +
-        '<p class="bt-empty">Pega el ID o el enlace de una pelea de AlbionZvZ, AlbionBB o del killboard oficial. Verás qué miembros de cada gremio estuvieron y con qué equipo murieron, y de ahí salen las builds del regear.</p>';
+        '<p class="bt-empty">Pega el ID o el enlace de una pelea de AlbionZvZ, AlbionBB o del killboard oficial, o un multi de AlbionBB con varias peleas. Verás qué miembros de cada gremio estuvieron y con qué equipo murieron, y de ahí salen las builds del regear.</p>';
       foot.hidden = true;
       return;
     }
@@ -965,7 +965,7 @@
       return '<option value="' + esc(n) + '"' + (n === bt.guild ? ' selected' : '') + '>' + esc(n) + (g.alliance ? ' [' + esc(g.alliance) + ']' : '') + ' · ' +
         Object.keys(g.players).length + ' jugadores · ' + g.deaths + ' muertes</option>';
     }).join('');
-    body.innerHTML = '<p class="bt-sum">Pelea <b>' + esc(d.ids.join(', ')) + '</b> · <b>' + fmt.format(d.kills) + '</b> kills · <b>' + names.length + '</b> gremios · <b>' + d.events + '</b> eventos leídos</p>' +
+    body.innerHTML = '<p class="bt-sum">' + (d.ids.length > 1 ? d.ids.length + ' peleas' : 'Pelea') + ' <b>' + esc(d.ids.join(', ')) + '</b> · <b>' + fmt.format(d.kills) + '</b> kills · <b>' + names.length + '</b> gremios · <b>' + d.events + '</b> eventos leídos</p>' +
       '<div class="bt-bar"><label>Gremio <select class="sel" id="bt-guild" aria-label="Gremio">' + opts + '</select></label>' +
       '<label><input type="checkbox" id="bt-seen"' + (bt.includeSeen ? ' checked' : '') + '> Incluir a quienes no murieron</label>' +
       '<button class="btn" type="button" data-bt="all">Todos</button><button class="btn" type="button" data-bt="none">Ninguno</button></div>' +
@@ -1004,16 +1004,33 @@
     return res.json();
   }
   // Toma el ID del enlace (/battles/ID) e ignora números de parámetros como ?t=1730000000.
+  // Reconoce, en cualquier mezcla y cantidad:
+  //   multi de AlbionBB  …/battles/multi?ids=123,456   (también &ids=…, %2C o espacios entre IDs)
+  //   pelea suelta       …/battles/123  o  …/battles/123,456  (AlbionBB, AlbionZvZ, killboard oficial)
+  //   IDs sueltos        123456789 987654321
+  // Los números de otros parámetros (p. ej. ?t=1730000000) no se toman como peleas.
+  var MAX_BATTLES = 30;
   function parseBattleIds(text) {
-    var clean = String(text).replace(/(https?:\/\/[^\s?#]+)[^\s]*/gi, '$1'), ids = [], m, re = /battles?\/(\d+)/gi;
-    while ((m = re.exec(clean))) ids.push(m[1]);
-    if (!ids.length) ids = clean.match(/\d{6,}/g) || [];
-    return ids.filter(function (x, i, a) { return a.indexOf(x) === i; });
+    var s = String(text || ''), ids = [], m;
+    function add(x) { if (x && x.length >= 6 && x.length <= 12 && ids.indexOf(x) < 0) ids.push(x); }
+    var reQ = /[?&#](?:ids|battles|battleids|battle_ids)=([^&#\s]+)/gi;
+    while ((m = reQ.exec(s))) { var v; try { v = decodeURIComponent(m[1].replace(/\+/g, ' ')); } catch (e) { v = m[1]; } v.split(/[^\d]+/).forEach(add); }
+    var reP = /battles?\/(\d[\d,]*)/gi;
+    while ((m = reP.exec(s))) m[1].split(',').forEach(add);
+    if (!ids.length) (s.replace(/https?:\/\/\S+/gi, ' ').match(/\d{6,12}/g) || []).forEach(add);
+    return ids.slice(0, MAX_BATTLES);
+  }
+  function battleServerFromText(text) {
+    if (/\/\/(?:www\.)?europe\.albion|gameinfo-ams|[?&]server=europe/i.test(text)) return 'europe';
+    if (/\/\/(?:www\.)?east\.albion|gameinfo-sgp|[?&]server=(?:east|asia)/i.test(text)) return 'east';
+    if (/\/\/(?:www\.)?(?:west\.)?albionbb\.com|[?&]server=(?:west|us|americas)/i.test(text)) return 'west';
+    return '';
   }
   async function searchBattle() {
     var text = $('#bt-ids').value, ids = parseBattleIds(text);
-    if (!ids.length) { setBt('Escribe el ID o pega el enlace de la pelea.', true); return; }
-    if (/\/\/(?:www\.)?europe\.albion/i.test(text)) setServer('europe'); else if (/\/\/(?:www\.)?east\.albion/i.test(text)) setServer('east');
+    if (!ids.length) { setBt('Escribe el ID o pega el enlace de la pelea (también sirve un multi de AlbionBB).', true); return; }
+    var srv = battleServerFromText(text);
+    if (srv) setServer(srv);
     var btn = $('#bt-go'), battles = [], events = [], found = [], missing = [], switched = '';
     btn.disabled = true;
     try {
@@ -1023,7 +1040,7 @@
         // Si la pelea no está en el servidor elegido, se prueba en los otros dos.
         var order = [state.prefs.server].concat(Object.keys(GAMEINFO).filter(function (x) { return x !== state.prefs.server; }));
         for (var j = 0; j < order.length && !hit; j++) {
-          setBt('Buscando la pelea ' + id + ' (' + SERVERS[order[j]] + ')…');
+          setBt((ids.length > 1 ? 'Pelea ' + (k + 1) + ' de ' + ids.length + ': ' : 'Buscando la pelea ') + id + ' (' + SERVERS[order[j]] + ')…');
           try { hit = { server: order[j], battle: await getJson(apiBase(order[j]) + '/battles/' + id) }; }
           catch (e) { if (e.status === 404) any404 = true; else lastErr = e; }
         }
@@ -1041,7 +1058,7 @@
           catch (e2) { if (off > 0 && e2.status === 400) break; throw e2; }
           if (!Array.isArray(page)) break;
           events = events.concat(page);
-          setBt('Pelea ' + id + ': ' + events.length + ' eventos leídos…');
+          setBt((ids.length > 1 ? 'Pelea ' + (k + 1) + ' de ' + ids.length + ' · ' : 'Pelea ' + id + ': ') + events.length + ' eventos leídos…');
           if (page.length < 51) break;
         }
       }
@@ -1051,7 +1068,8 @@
       }
       if (loadBattleData(found, battles, events)) {
         var notes = [];
-        if (switched) notes.push('La pelea está en el servidor ' + switched + '.');
+        if (found.length > 1) notes.push(found.length + ' peleas unidas: las muertes repetidas entre ellas se cuentan una vez.');
+        if (switched) notes.push((found.length > 1 ? 'Las peleas están' : 'La pelea está') + ' en el servidor ' + switched + '.');
         if (missing.length) notes.push('No encontré: ' + missing.join(', ') + '.');
         setBt(notes.join(' '));
       }
