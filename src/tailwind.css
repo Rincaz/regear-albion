@@ -1380,3 +1380,6 @@ html.gated body > *:not(.gate) { visibility: hidden; }
 @media (max-width: 560px) {
   .mtabs#mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.kb-scan { @apply flex flex-wrap items-center gap-[8px] mb-[10px] p-[10px] px-[12px] rounded-[10px] text-[13px] text-muted; background: var(--wash); }
+.kb-scan span { @apply flex-[1_1_260px]; }
+.kb-scan b { @apply text-ink tabular-nums; }

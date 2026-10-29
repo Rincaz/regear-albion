@@ -1178,7 +1178,13 @@
   /* ---------- Killboard del gremio ---------- */
   // Muertes y kills recientes de un gremio (API gameinfo /events?guildId=). Desde aquí se ve el equipo de cada
   // muerte y se puede mandar al regear sin importar la pelea entera.
-  var kb = { events: [], offset: 0, done: false, loading: false, err: '', filter: 'all', q: '', found: null, searching: false, added: {}, at: 0 };
+  var kb = { events: [], offset: 0, done: false, loading: false, err: '', filter: 'all', q: '', found: null, searching: false, added: {}, at: 0, scan: null };
+  // La API oficial solo entrega las KILLS de un gremio. Las muertes se buscan miembro por miembro (/players/ID/deaths);
+  // se guarda la fama de muerte de cada uno para revisar después solo a quienes murieron de nuevo.
+  var KB_DEATH_DAYS = 30;
+  function isDeath(ev, gid) { return !!(ev && (ev._death || (ev.Victim && ev.Victim.GuildId === gid))); }
+  function dfCache(gid) { try { return JSON.parse(localStorage.getItem('regear-kb-df-' + gid) || '{}') || {}; } catch (e) { return {}; } }
+  function dfSave(gid, c) { try { localStorage.setItem('regear-kb-df-' + gid, JSON.stringify(c)); } catch (e) { /* sin almacenamiento */ } }
   var KB_PAGE = 30;
   function relTime(ms) {
     var d = Math.max(0, Date.now() - ms) / 1000;
@@ -1218,16 +1224,22 @@
     if (g) {
       var q = kb.q.trim().toLowerCase();
       var rows = kb.events.filter(function (ev) {
-        var death = ev.Victim && ev.Victim.GuildId === gid;
+        var death = isDeath(ev, gid);
         if (kb.filter === 'deaths' && !death) return false;
         if (kb.filter === 'kills' && death) return false;
         if (q && ((ev.Killer && ev.Killer.Name) + ' ' + (ev.Victim && ev.Victim.Name)).toLowerCase().indexOf(q) < 0) return false;
         return true;
       });
-      var nd = kb.events.filter(function (ev) { return ev.Victim && ev.Victim.GuildId === gid; }).length;
-      list = (kb.events.length ? '<p class="kb-sum"><b>' + kb.events.length + '</b> eventos · <b class="down">' + nd + '</b> muertes · <b class="up">' + (kb.events.length - nd) + '</b> kills</p>' : '') +
+      var nd = kb.events.filter(function (ev) { return isDeath(ev, gid); }).length;
+      rows.sort(function (a, b) { return (Date.parse(b.TimeStamp) || 0) - (Date.parse(a.TimeStamp) || 0); });
+      var sc = kb.scan && kb.scan.gid === gid ? kb.scan : null;
+      var scanBox = '<div class="kb-scan">' + (sc && sc.running
+        ? '<span>Buscando muertes: <b>' + sc.doneN + '</b> de <b>' + sc.total + '</b> miembros revisados' + (sc.fail ? ' · ' + sc.fail + ' sin respuesta' : '') + '…</span><button type="button" class="btn sm" data-kb="scan-stop">Detener</button>'
+        : '<span>' + (sc && sc.finished ? 'Muertes revisadas ' + esc(relTime(sc.finished)) + (sc.fail ? ' · ' + sc.fail + ' miembros no respondieron' : '') + '. ' : 'La API oficial solo entrega las kills del gremio; las muertes se buscan miembro por miembro. ') + '</span>' +
+          '<button type="button" class="btn sm' + (sc && sc.finished ? '' : ' primary') + '" data-kb="scan">' + (sc && sc.finished ? 'Buscar muertes nuevas' : 'Buscar muertes de los miembros') + '</button>') + '</div>';
+      list = scanBox + (kb.events.length ? '<p class="kb-sum"><b>' + kb.events.length + '</b> eventos · <b class="down">' + nd + '</b> muertes · <b class="up">' + (kb.events.length - nd) + '</b> kills</p>' : '') +
         (rows.length ? '<ul class="kb-list">' + rows.map(function (ev) {
-          var death = ev.Victim && ev.Victim.GuildId === gid, added = death && kbAlreadyAdded(ev);
+          var death = isDeath(ev, gid), added = death && kbAlreadyAdded(ev);
           return '<li class="kb-row ' + (death ? 'death' : 'kill') + '"><span class="kb-type">' + (death ? 'Muerte' : 'Kill') + '<small>' + esc(relTime(Date.parse(ev.TimeStamp) || 0)) + '</small></span>' +
             kbSide(ev.Killer, gid) + '<span class="kb-arrow" aria-hidden="true">›</span>' + kbSide(ev.Victim, gid) +
             '<span class="kb-fame">' + fmt.format(Math.round(ev.TotalVictimKillFame || 0)) + '<small>fama</small></span>' +
@@ -1238,14 +1250,14 @@
         (kb.loading ? '<p class="hint kb-loading">Consultando la API de Albion… puede tardar hasta un minuto si está lenta.</p>' : '') +
         (kb.events.length && !kb.done && !kb.loading ? '<button type="button" class="btn kb-more" data-kb="more">Cargar más</button>' : '');
     }
-    box.innerHTML = '<p class="hint">Kills y muertes recientes de tu gremio según la API oficial de Albion. «Al regear» agrega esa muerte a tus builds con el equipo con que murió.</p>' + head + picker + tools + list;
+    box.innerHTML = '<p class="hint">Kills y muertes recientes de tu gremio según la API oficial de Albion. «Al regear» agrega esa muerte a tus builds con el equipo con que murió. Para una pelea completa, usa «Importar pelea».</p>' + head + picker + tools + list;
     wireIcons(box);
     if (g && !kb.events.length && !kb.loading && !kb.err && kb.gid !== gid) kbLoad(true);
   }
   async function kbLoad(reset) {
     var g = state.prefs.kbGuild;
     if (!g || kb.loading) return;
-    if (reset) { kb.events = []; kb.offset = 0; kb.done = false; }
+    if (reset) { kb.events = kb.events.filter(function (e) { return e._death && kb.gid === g.id; }); kb.offset = 0; kb.done = false; }
     kb.gid = g.id; kb.loading = true; kb.err = ''; renderKillboard();
     try {
       await detectProxy();
@@ -1263,6 +1275,51 @@
         : 'La API de Albion no respondió (' + (e && e.message || 'sin conexión') + '). Pulsa «Actualizar» en un momento.';
     } finally {
       kb.loading = false;
+      if (state.prefs.mode === 'killboard') renderKillboard();
+    }
+  }
+  async function kbScanDeaths() {
+    var g = state.prefs.kbGuild;
+    if (!g || (kb.scan && kb.scan.running)) return;
+    var sc = kb.scan = { gid: g.id, running: true, doneN: 0, total: 0, fail: 0, stop: false, finished: 0 };
+    renderKillboard();
+    var tick = setInterval(function () {
+      var ae = document.activeElement; // no se repinta mientras se escribe en un campo del killboard
+      if (state.prefs.mode === 'killboard' && !(ae && ae.closest && ae.closest('#kb input'))) renderKillboard();
+    }, 1500);
+    try {
+      await detectProxy();
+      if (!proxyOn) throw new Error('sin puente');
+      var base = apiBase(state.prefs.server), members = await getJson(base + '/guilds/' + encodeURIComponent(g.id) + '/members');
+      var cache = dfCache(g.id), first = !Object.keys(cache).length, since = Date.now() - KB_DEATH_DAYS * 864e5;
+      var todo = (Array.isArray(members) ? members : []).filter(function (m) { return m && m.Id && (m.DeathFame || 0) > 0 && (first || cache[m.Id] !== m.DeathFame); });
+      sc.total = todo.length;
+      var seen = {}; kb.events.forEach(function (e) { seen[e.EventId] = e; });
+      var i = 0;
+      async function worker() {
+        while (i < todo.length && !sc.stop) {
+          var m = todo[i++], list = null;
+          for (var a = 0; a < 2 && !list; a++) {
+            try { var r = await fetch(base + '/players/' + encodeURIComponent(m.Id) + '/deaths', proxyInit(base)); if (r.ok) list = await r.json(); } catch (e) { /* se reintenta una vez */ }
+          }
+          if (!Array.isArray(list)) { sc.fail++; sc.doneN++; continue; }
+          cache[m.Id] = m.DeathFame;
+          list.forEach(function (ev) {
+            if (!ev || !ev.EventId || (Date.parse(ev.TimeStamp) || 0) < since) return;
+            if (seen[ev.EventId]) { seen[ev.EventId]._death = true; return; }
+            ev._death = true; seen[ev.EventId] = ev; kb.events.push(ev);
+          });
+          sc.doneN++;
+        }
+      }
+      await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+      dfSave(g.id, cache);
+      sc.finished = Date.now();
+      if (!sc.total) flash('#top-status', first ? 'Ningún miembro tiene muertes registradas.' : 'No hay muertes nuevas desde la última revisión.', 6000);
+    } catch (e) {
+      kb.err = 'No se pudieron buscar las muertes: ' + (e && e.message === 'sin puente' ? 'falta el puente hacia la API de Albion.' : (e && e.message || 'sin conexión') + '.');
+    } finally {
+      clearInterval(tick); sc.running = false;
       if (state.prefs.mode === 'killboard') renderKillboard();
     }
   }
@@ -1325,9 +1382,11 @@
     else if (a === 'pick') {
       var x = kb.found[+b.dataset.i];
       state.prefs.kbGuild = { id: x.id, name: x.name, alliance: x.alliance }; save();
-      kb.found = null; kb.events = []; kb.gid = null; kb.err = ''; kbLoad(true);
+      kb.found = null; kb.events = []; kb.gid = null; kb.err = ''; if (kb.scan) kb.scan.stop = true; kb.scan = null; kbLoad(true);
     }
     else if (a === 'refresh') kbLoad(true);
+    else if (a === 'scan') kbScanDeaths();
+    else if (a === 'scan-stop') { if (kb.scan) kb.scan.stop = true; }
     else if (a === 'more') kbLoad(false);
     else if (a === 'filter') { kb.filter = b.dataset.f; renderKillboard(); }
     else if (a === 'view' && e) openKill({ kill: killInfo(e) });
