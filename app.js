@@ -990,12 +990,17 @@
     try { var r = await fetch(base + '/ping', proxyInit(base)); return r.ok && (await r.json()).ok === true; }
     catch (e) { return false; }
   }
-  async function detectProxy() {
-    if (proxyChecked) return proxyOn;
-    proxyChecked = true;
-    if (await ping('/gameinfo')) { proxyOn = true; proxyBase = '/gameinfo'; }
-    else if (CLOUD_PROXY && await ping(CLOUD_PROXY)) { proxyOn = true; proxyBase = CLOUD_PROXY; }
-    return proxyOn;
+  // Una sola detección compartida: si dos llamadas llegan a la vez, la segunda espera a la primera
+  // (antes devolvía «sin puente» mientras la primera aún esperaba la respuesta y la consulta salía directa, bloqueada por CORS).
+  var proxyProbe = null;
+  function detectProxy() {
+    if (!proxyProbe) proxyProbe = (async function () {
+      if (await ping('/gameinfo')) { proxyOn = true; proxyBase = '/gameinfo'; }
+      else if (CLOUD_PROXY && await ping(CLOUD_PROXY)) { proxyOn = true; proxyBase = CLOUD_PROXY; }
+      proxyChecked = true;
+      return proxyOn;
+    })();
+    return proxyProbe;
   }
   function apiBase(server) { return proxyOn ? proxyBase + '/' + server + '/api/gameinfo' : GAMEINFO[server] + '/api/gameinfo'; }
   // La API de Albion a veces tarda o responde 5xx: se reintenta 2 veces antes de rendirse (un 404 no se reintenta).
