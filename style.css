@@ -466,3 +466,21 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; color:
 @media (max-width: 700px) { .cl-actions { margin-left: 0; } }
 .cl-f .pk-q { width: auto; flex: 1 1 160px; min-width: 0; }
 .cloud-bar .sel.sm { height: 30px; }
+
+/* ---------- Pantalla de inicio de sesión ---------- */
+html.gated body > *:not(.gate) { visibility: hidden; }
+.gate { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; overflow: auto; padding: max(20px, env(safe-area-inset-top, 0px)) 16px max(20px, env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+.gate-card { width: 100%; max-width: 420px; display: grid; gap: 18px; padding: 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.gate-brand { display: flex; align-items: center; gap: 14px; }
+.gate-brand img { flex: none; width: 52px; height: 52px; border-radius: 12px; }
+.gate-brand h1 { margin: 0; font: 700 2rem/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+.gate-brand p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.gate-form { display: grid; gap: 12px; }
+.gate-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.gate-form .pk-q { height: 44px; font-size: 16px; }
+.gate-form .btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; font-size: 14px; }
+.gate .cl-msg { margin: 0; font-size: 13px; color: var(--danger); }
+.gate .cl-msg.ok { color: var(--good); }
+.gate-note { margin: 0; font-size: 13px; color: var(--muted); }
+.gate-skip { justify-self: center; padding: 6px; border: 0; background: transparent; font-size: 13px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.gate-skip:hover { color: var(--ink); }
