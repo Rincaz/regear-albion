@@ -3,3 +3,5 @@ registro*.txt
 *.log
 node_modules/
 .vscode/
+dist/
+.vercel/

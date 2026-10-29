@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = Number(process.argv[2] || process.env.PORT) || 5173;
-const ROOT = __dirname;
+// Tras «npm run build» se sirve dist/ (con el CSS de Tailwind); sin build, la carpeta del proyecto.
+const ROOT = fs.existsSync(path.join(__dirname, 'dist', 'index.html')) ? path.join(__dirname, 'dist') : __dirname;
 const HOSTS = { west: 'gameinfo.albiononline.com', east: 'gameinfo-sgp.albiononline.com', europe: 'gameinfo-ams.albiononline.com' };
 // Solo para pruebas: GAMEINFO_UPSTREAM=http://127.0.0.1:9999 reemplaza los tres servidores.
 const UPSTREAM = process.env.GAMEINFO_UPSTREAM ? new URL(process.env.GAMEINFO_UPSTREAM) : null;

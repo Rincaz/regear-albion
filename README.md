@@ -11,13 +11,15 @@ Todo se guarda en el navegador (localStorage). El respaldo en JSON sirve para pa
 
 ## Ejecutar en VS Code
 
-Necesitas Node.js. En la terminal de VS Code, dentro de esta carpeta:
+Necesitas Node.js 18 o superior. En la terminal de VS Code, dentro de esta carpeta:
 
 ```bash
+npm install        # solo la primera vez (instala Tailwind)
+npm run build      # genera dist/ con el CSS de Tailwind
 npm start
 ```
 
-y abre http://localhost:5173. Si el puerto está ocupado: `node server.js 5174`.
+y abre http://localhost:5173. Mientras cambias estilos, deja corriendo `npm run dev:css` en otra terminal: recompila `dist/style.css` al guardar (los cambios en HTML/JS necesitan `npm run build` de nuevo). Si el puerto está ocupado: `node server.js 5174`.
 
 `npm start` ejecuta `server.js`, un servidor sin dependencias que sirve la página y hace de puente hacia la API de Albion.
 **Live Server y el doble clic sirven para ver la página, pero no para «Importar pelea»**: la API de peleas de Albion
@@ -25,7 +27,10 @@ no envía cabeceras CORS, así que el navegador bloquea la consulta si la págin
 
 ## Archivos
 
-- `index.html`, `style.css`, `app.js`: la aplicación, sin dependencias ni build.
+- `index.html`, `app.js`: la aplicación.
+- `src/tailwind.css` + `tailwind.config.js`: estilos con Tailwind CSS (componentes con `@apply`; colores como variables para el tema claro/oscuro). Se compilan a `dist/style.css`.
+- `tools/build.mjs`: copia los archivos estáticos a `dist/`, la carpeta que publica Vercel.
+- `vercel.json` + `api/gameinfo.js`: configuración de Vercel y función que hace de puente a la API de Albion en `/gameinfo/...`.
 - `server.js`: servidor local y puente hacia la API de peleas (solo escucha en tu equipo).
 - `stock.html` + `stock.js`: página de stock por lugares.
 - `data.js`: items y recetas del juego (nombres en español; el inglés se usa solo para buscar).
@@ -108,3 +113,11 @@ Sin configurar nada, la app funciona igual que antes, con los datos en tu navega
 - El correo de acceso que trae Supabase tiene un límite bajo de envíos por hora. Para un gremio grande, configura tu propio SMTP en *Authentication → Emails*.
 - La app muestra los últimos 5000 movimientos; en la base se guardan todos.
 - «Vaciar» o «Reequip listo» en un gremio afectan el stock de todos.
+
+## Publicar en Vercel
+
+1. Sube el proyecto a GitHub (sin `dist/` ni `node_modules/`, ya están en `.gitignore`).
+2. En [vercel.com](https://vercel.com) → *Add New → Project* → importa el repositorio. Vercel lee `vercel.json`: ejecuta `npm run build` y publica `dist/`. No hay que tocar la configuración.
+3. La función `api/gameinfo.js` queda en el mismo dominio, así que «Importar pelea» funciona sin `npm start` ni la función de Supabase.
+4. En Supabase → *Authentication → URL Configuration*, agrega a *Redirect URLs* el dominio que te dé Vercel, por ejemplo `https://regear-albion.vercel.app/**` (y ponlo como *Site URL* si será la dirección principal). No uses `https://*.vercel.app/**`: permitiría que cualquier sitio de Vercel recibiera los enlaces de acceso.
+5. Cada `git push` a la rama principal publica una versión nueva; las demás ramas generan una vista previa.

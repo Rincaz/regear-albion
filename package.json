@@ -4,6 +4,14 @@
   "description": "Calculadora de regear para Albion Online: items del cofre, materiales, artefactos y silver aproximado.",
   "private": true,
   "scripts": {
+    "build": "tailwindcss -i ./src/tailwind.css -o ./dist/style.css --minify && node tools/build.mjs",
+    "dev:css": "tailwindcss -i ./src/tailwind.css -o ./dist/style.css --watch",
     "start": "node server.js"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
