@@ -971,6 +971,129 @@
     $('#bt-count').textContent = selectedEntries().length + ' de ' + bt.entries.length + ' seleccionados · ' + groups.length + (groups.length === 1 ? ' build distinta' : ' builds distintas');
     $('#bt-add').disabled = !groups.length;
   }
+  /* ---------- Resumen de la pelea (estilo AlbionBB): bandos, quién mató a quién, jugadores y muertes ---------- */
+  function sideOf(p, by) {
+    if (!p) return '';
+    var a = p.AllianceName || p.allianceName || p.alliance || '', g = p.GuildName || p.guildName || p.guild || '';
+    return by === 'alliance' ? (a ? '[' + a + ']' : (g || 'Sin gremio')) : (g || 'Sin gremio');
+  }
+  function buildSummary() {
+    if (bt.sum && bt.sum.by === bt.sideBy) return bt.sum;
+    var by = bt.sideBy, B = bt.raw.battles, E = bt.raw.events, P = {}, start = Infinity, end = 0, cluster = '';
+    function pl(id, name) { return P[id] || (P[id] = { id: id, name: name || '?', guild: '', alliance: '', kills: 0, deaths: 0, fame: 0, ip: 0, weapon: '' }); }
+    B.forEach(function (b) {
+      var t0 = Date.parse(b.startTime), t1 = Date.parse(b.endTime);
+      if (t0 < start) start = t0; if (t1 > end) end = t1; if (!cluster && b.clusterName) cluster = b.clusterName;
+      var list = Array.isArray(b.players) ? b.players : Object.keys(b.players || {}).map(function (k) { return Object.assign({ id: k }, b.players[k]); });
+      list.forEach(function (x) {
+        var p = pl(x.id || x.Id, x.name || x.Name);
+        p.guild = x.guildName || p.guild; p.alliance = x.allianceName || p.alliance;
+        p.kills += +x.kills || 0; p.deaths += +x.deaths || 0; p.fame += +x.killFame || 0;
+      });
+    });
+    var noBattle = !B.length || !Object.keys(P).length, M = {};
+    function seen(x) {
+      if (!x || !x.Name) return null;
+      var p = pl(x.Id || x.Name, x.Name);
+      if (!p.guild) p.guild = x.GuildName || ''; if (!p.alliance) p.alliance = x.AllianceName || '';
+      if (x.AverageItemPower > p.ip) p.ip = x.AverageItemPower;
+      if (!p.weapon && x.Equipment && x.Equipment.MainHand) p.weapon = x.Equipment.MainHand.Type;
+      return p;
+    }
+    E.forEach(function (ev) {
+      var t = Date.parse(ev.TimeStamp) || 0;
+      if (t && t < start) start = t; if (t > end) end = t;
+      var k = seen(ev.Killer), v = seen(ev.Victim);
+      (ev.Participants || []).concat(ev.GroupMembers || []).forEach(seen);
+      if (noBattle) { if (k) { k.kills++; k.fame += ev.TotalVictimKillFame || 0; } if (v) v.deaths++; }
+      if (k && v) {
+        var ks = sideOf({ guild: k.guild, alliance: k.alliance }, by), vs = sideOf({ guild: v.guild, alliance: v.alliance }, by);
+        (M[ks] = M[ks] || {})[vs] = (M[ks][vs] || 0) + 1;
+      }
+    });
+    var S = {};
+    Object.keys(P).forEach(function (id) {
+      var p = P[id], key = sideOf({ guild: p.guild, alliance: p.alliance }, by);
+      var x = S[key] || (S[key] = { key: key, players: 0, kills: 0, deaths: 0, fame: 0, ipSum: 0, ipN: 0, guilds: {} });
+      x.players++; x.kills += p.kills; x.deaths += p.deaths; x.fame += p.fame;
+      if (p.ip) { x.ipSum += p.ip; x.ipN++; }
+      if (p.guild) x.guilds[p.guild] = 1;
+    });
+    var sides = Object.keys(S).map(function (k) { return S[k]; }).sort(function (a, b) { return b.players - a.players || b.fame - a.fame; });
+    bt.sum = { by: by, players: P, sides: sides, matrix: M, start: start === Infinity ? 0 : start, end: end, cluster: cluster };
+    return bt.sum;
+  }
+  function battleSummaryHtml() {
+    var s = buildSummary(), d = bt.data, plist = Object.keys(s.players).map(function (k) { return s.players[k]; });
+    var mins = s.start && s.end ? Math.max(1, Math.round((s.end - s.start) / 60000)) : 0;
+    var when = s.start ? new Date(s.start).toLocaleString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    var head = '<div class="bs-head"><div><b>' + (d.ids.length > 1 ? d.ids.length + ' peleas' : 'Pelea ' + esc(d.ids[0])) + '</b>' + (when ? '<span>' + esc(when) + (mins ? ' · ' + mins + ' min' : '') + '</span>' : '') + (s.cluster ? '<span>' + esc(s.cluster) + '</span>' : '') + '</div>' +
+      '<dl class="bs-stats"><div><dt>Jugadores</dt><dd>' + fmt.format(plist.length) + '</dd></div><div><dt>Kills</dt><dd>' + fmt.format(bt.raw.events.length) + '</dd></div>' +
+      '<div><dt>Fama</dt><dd>' + shortNum(d.fame || plist.reduce(function (a, p) { return a + p.fame; }, 0)) + '</dd></div><div><dt>Bandos</dt><dd>' + s.sides.length + '</dd></div></dl></div>';
+    // Los dos bandos con más jugadores, frente a frente.
+    var a1 = s.sides[0], a2 = s.sides[1];
+    function vsCard(x) {
+      return '<button type="button" class="bs-vs-side" data-bt="side" data-v="' + esc(x.key) + '" aria-pressed="' + (bt.psel === x.key) + '"><b>' + esc(x.key) + '</b><span>' + x.players + ' jugadores · ' +
+        (x.ipN ? fmt.format(Math.round(x.ipSum / x.ipN)) + ' IP' : '') + '</span><span><em class="up">' + x.kills + ' kills</em> · <em class="down">' + x.deaths + ' muertes</em> · ' + shortNum(x.fame) + ' fama</span></button>';
+    }
+    var versus = a1 && a2 ? '<div class="bs-vs">' + vsCard(a1) + '<span class="bs-vs-x">vs</span>' + vsCard(a2) + '</div>' + (s.sides.length > 2 ? '<p class="hint bs-more">Y ' + (s.sides.length - 2) + ' bando' + (s.sides.length - 2 === 1 ? '' : 's') + ' más en la tabla.</p>' : '') : '';
+    var byTabs = '<div class="bs-by"><span>Ver por</span><div class="mtabs" role="group">' + [['alliance', 'Alianza'], ['guild', 'Gremio']].map(function (o) {
+      return '<button type="button" class="mtab" data-bt="by" data-v="' + o[0] + '" aria-pressed="' + (bt.sideBy === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div>';
+    var maxFame = Math.max.apply(null, s.sides.map(function (x) { return x.fame; }).concat([1]));
+    var sides = '<h3 class="bs-t">Bandos</h3><div class="bs-scroll"><table class="bs-tab"><thead><tr><th>' + (bt.sideBy === 'alliance' ? 'Alianza' : 'Gremio') + '</th><th>Jugadores</th><th>Kills</th><th>Muertes</th><th>Fama</th><th>IP prom.</th></tr></thead><tbody>' +
+      s.sides.slice(0, 20).map(function (x) {
+        var sub = bt.sideBy === 'alliance' ? Object.keys(x.guilds).filter(function (g) { return g !== x.key; }).join(', ') : '';
+        return '<tr><td><button type="button" class="bs-side" data-bt="side" data-v="' + esc(x.key) + '">' + esc(x.key) + '</button>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '<span class="bs-bar" style="width:' + Math.round(x.fame / maxFame * 100) + '%"></span></td>' +
+          '<td>' + x.players + '</td><td class="up">' + x.kills + '</td><td class="down">' + x.deaths + '</td><td>' + shortNum(x.fame) + '</td><td>' + (x.ipN ? fmt.format(Math.round(x.ipSum / x.ipN)) : '–') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    var top = s.sides.slice(0, 6).map(function (x) { return x.key; });
+    var vs = '<h3 class="bs-t">Quién mató a quién</h3><p class="hint">Fila: bando que mató · columna: bando que murió. Los 6 bandos con más jugadores.</p><div class="bs-scroll"><table class="bs-tab bs-mx"><thead><tr><th>Mató ↓ / Murió →</th>' +
+      top.map(function (k) { return '<th>' + esc(k) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      top.map(function (r) {
+        return '<tr><th>' + esc(r) + '</th>' + top.map(function (c) { var n = (s.matrix[r] || {})[c] || 0; return '<td class="' + (r === c ? 'same' : n ? 'hit' : 'zero') + '">' + (n || '·') + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>';
+    var q = plain(bt.pq.trim()), selSide = bt.psel;
+    var rows = plist.filter(function (p) { return (!selSide || sideOf({ guild: p.guild, alliance: p.alliance }, bt.sideBy) === selSide) && (!q || plain(p.name + ' ' + p.guild).indexOf(q) >= 0); })
+      .sort(function (a, b) { return b.fame - a.fame || b.kills - a.kills || a.deaths - b.deaths; });
+    var shown = bt.pall ? rows : rows.slice(0, 50);
+    var players = '<h3 class="bs-t">Jugadores</h3><div class="bs-filters"><select class="sel" data-bt="psel" aria-label="Bando"><option value="">Todos los bandos</option>' +
+      s.sides.map(function (x) { return '<option value="' + esc(x.key) + '"' + (x.key === selSide ? ' selected' : '') + '>' + esc(x.key) + ' (' + x.players + ')</option>'; }).join('') + '</select>' +
+      '<input class="pk-q" id="bs-pq" type="search" autocomplete="off" placeholder="Buscar jugador o gremio" value="' + esc(bt.pq) + '" aria-label="Buscar jugador"></div>' +
+      '<div class="bs-scroll" id="bs-players">' + playersTable(shown) + '</div>' + (rows.length > shown.length ? '<button type="button" class="btn sm" data-bt="pall">Mostrar los ' + rows.length + '</button>' : '');
+    var ev = bt.raw.events.slice().sort(function (a, b) { return (Date.parse(a.TimeStamp) || 0) - (Date.parse(b.TimeStamp) || 0); });
+    if (selSide) ev = ev.filter(function (e) { return sideOf(e.Killer, bt.sideBy) === selSide || sideOf(e.Victim, bt.sideBy) === selSide; });
+    var evShown = bt.feedAll ? ev : ev.slice(0, 40);
+    var feed = '<h3 class="bs-t">Muertes' + (selSide ? ' de ' + esc(selSide) : '') + ' <small>' + ev.length + '</small></h3><ul class="bs-feed">' + evShown.map(function (e) {
+      var w1 = e.Killer && e.Killer.Equipment && e.Killer.Equipment.MainHand, w2 = e.Victim && e.Victim.Equipment && e.Victim.Equipment.MainHand;
+      var mine = selSide && sideOf(e.Victim, bt.sideBy) === selSide;
+      return '<li class="' + (mine ? 'down' : selSide ? 'up' : '') + '"><span class="bs-time">' + esc(new Date(Date.parse(e.TimeStamp) || 0).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })) + '</span>' +
+        '<span class="bs-p">' + (w1 ? iconHtml(w1.Type, typeInfo(w1.Type).name, true) : '') + '<b>' + esc(e.Killer ? e.Killer.Name : '?') + '</b><small>' + esc(sideOf(e.Killer, 'guild')) + '</small></span><span class="kb-arrow">›</span>' +
+        '<span class="bs-p">' + (w2 ? iconHtml(w2.Type, typeInfo(w2.Type).name, true) : '') + '<b>' + esc(e.Victim ? e.Victim.Name : '?') + '</b><small>' + esc(sideOf(e.Victim, 'guild')) + ' · ' + fmt.format(Math.round(e.Victim && e.Victim.AverageItemPower || 0)) + ' IP</small></span>' +
+        '<span class="bs-fame">' + shortNum(e.TotalVictimKillFame || 0) + '</span><button type="button" class="btn sm" data-bt="ev" data-v="' + e.EventId + '">Ver</button></li>';
+    }).join('') + '</ul>' + (ev.length > evShown.length ? '<button type="button" class="btn sm" data-bt="feedall">Mostrar las ' + ev.length + '</button>' : '');
+    return '<div class="bs">' + head + byTabs + versus + sides + vs + players + feed + '</div>';
+  }
+  function playersTable(list) {
+    return '<table class="bs-tab bs-pl"><thead><tr><th>Jugador</th><th>Gremio</th><th>Kills</th><th>Muertes</th><th>Fama</th><th>IP</th></tr></thead><tbody>' +
+      list.map(function (p) {
+        return '<tr><td><span class="bs-p">' + (p.weapon ? iconHtml(p.weapon, typeInfo(p.weapon).name, true) : '') + '<b>' + esc(p.name) + '</b></span></td><td>' + esc((p.alliance ? '[' + p.alliance + '] ' : '') + (p.guild || '–')) + '</td>' +
+          '<td class="up">' + p.kills + '</td><td class="down">' + p.deaths + '</td><td>' + shortNum(p.fame) + '</td><td>' + (p.ip ? fmt.format(Math.round(p.ip)) : '–') + '</td></tr>';
+      }).join('') + '</tbody></table>' + (list.length ? '' : '<p class="empty">Nadie coincide con el filtro.</p>');
+  }
+  // Al escribir en el buscador de jugadores solo se repinta la tabla (el campo conserva el foco).
+  function refreshPlayers() {
+    var s = buildSummary(), q = plain(bt.pq.trim()), list = Object.keys(s.players).map(function (k) { return s.players[k]; })
+      .filter(function (p) { return (!bt.psel || sideOf({ guild: p.guild, alliance: p.alliance }, bt.sideBy) === bt.psel) && (!q || plain(p.name + ' ' + p.guild).indexOf(q) >= 0); })
+      .sort(function (a, b) { return b.fame - a.fame || b.kills - a.kills || a.deaths - b.deaths; });
+    var box = $('#bs-players'); if (!box) return;
+    box.innerHTML = playersTable(bt.pall ? list : list.slice(0, 50)); wireIcons(box);
+  }
+  function shortNum(n) {
+    n = +n || 0;
+    if (n >= 1e6) return (n / 1e6).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' M';
+    if (n >= 1e3) return (n / 1e3).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' k';
+    return fmt.format(Math.round(n));
+  }
   function renderBattle() {
     var body = $('#bt-body'), foot = $('#bt-foot'), d = bt.data;
     if (!d) {
@@ -987,6 +1110,15 @@
       foot.hidden = true;
       return;
     }
+    var views = '<div class="mtabs bt-views" role="group" aria-label="Vista de la pelea">' +
+      '<button type="button" class="mtab" data-bt="view" data-v="summary" aria-pressed="' + (bt.view !== 'regear') + '">Resumen de la pelea</button>' +
+      '<button type="button" class="mtab" data-bt="view" data-v="regear" aria-pressed="' + (bt.view === 'regear') + '">Regear de mi gremio</button></div>';
+    if (bt.view !== 'regear' && bt.raw) {
+      body.innerHTML = views + battleSummaryHtml();
+      wireIcons(body);
+      foot.hidden = true;
+      return;
+    }
     if (!d.guilds[bt.guild]) bt.guild = d.guilds[state.prefs.guild] ? state.prefs.guild : '';
     computeEntries();
     var opts = (bt.guild ? '' : '<option value="" selected>Elige tu gremio…</option>') + names.map(function (n) {
@@ -994,7 +1126,7 @@
       return '<option value="' + esc(n) + '"' + (n === bt.guild ? ' selected' : '') + '>' + esc(n) + (g.alliance ? ' [' + esc(g.alliance) + ']' : '') + ' · ' +
         Object.keys(g.players).length + ' jugadores · ' + g.deaths + ' muertes</option>';
     }).join('');
-    body.innerHTML = '<p class="bt-sum">' + (d.ids.length > 1 ? d.ids.length + ' peleas' : 'Pelea') + ' <b>' + esc(d.ids.join(', ')) + '</b> · <b>' + fmt.format(d.kills) + '</b> kills · <b>' + names.length + '</b> gremios · <b>' + d.events + '</b> eventos leídos</p>' +
+    body.innerHTML = (bt.raw ? views : '') + '<p class="bt-sum">' + (d.ids.length > 1 ? d.ids.length + ' peleas' : 'Pelea') + ' <b>' + esc(d.ids.join(', ')) + '</b> · <b>' + fmt.format(d.kills) + '</b> kills · <b>' + names.length + '</b> gremios · <b>' + d.events + '</b> eventos leídos</p>' +
       '<div class="bt-bar"><label>Gremio <select class="sel" id="bt-guild" aria-label="Gremio">' + opts + '</select></label>' +
       '<label><input type="checkbox" id="bt-seen"' + (bt.includeSeen ? ' checked' : '') + '> Incluir a quienes no murieron</label>' +
       '<button class="btn" type="button" data-bt="all">Todos</button><button class="btn" type="button" data-bt="none">Ninguno</button></div>' +
@@ -1136,6 +1268,9 @@
     var data = ingest(ids, battles, events);
     if (!data.events) { setBt('La pelea no tiene eventos de muerte para leer.', true); return false; }
     bt.data = data; bt.guild = ''; bt.sel = {}; bt.role = {}; bt.q = '';
+    var seenEv = {};
+    bt.raw = { battles: battles.filter(Boolean), events: events.filter(function (e) { if (!e || !e.EventId || seenEv[e.EventId]) return false; seenEv[e.EventId] = 1; return true; }) };
+    bt.view = 'summary'; bt.sideBy = 'alliance'; bt.psel = ''; bt.pq = ''; bt.pall = false; bt.feedAll = false; bt.sum = null;
     renderBattle();
     setBt('');
     return true;
@@ -1477,6 +1612,18 @@
     var kb = ev.target.closest('[data-kill]');
     if (kb) { openKill(bt.entries[+kb.dataset.kill]); return; }
     if (ev.target.id === 'bt-modal' || ev.target.closest('[data-bt="close"]')) { closeBattle(); return; }
+    var sv = ev.target.closest('[data-bt="view"],[data-bt="by"],[data-bt="side"],[data-bt="pall"],[data-bt="feedall"],[data-bt="ev"]');
+    if (sv) {
+      var a = sv.dataset.bt, v = sv.dataset.v;
+      if (a === 'view') bt.view = v;
+      else if (a === 'by') { bt.sideBy = v; bt.psel = ''; }
+      else if (a === 'side') bt.psel = bt.psel === v ? '' : v;
+      else if (a === 'pall') bt.pall = true;
+      else if (a === 'feedall') bt.feedAll = true;
+      else if (a === 'ev') { var e = bt.raw.events.filter(function (x) { return String(x.EventId) === v; })[0]; if (e) openKill({ kill: killInfo(e) }); return; }
+      var scroll = $('#bt-body').scrollTop; renderBattle(); $('#bt-body').scrollTop = scroll;
+      return;
+    }
     var b = ev.target.closest('[data-bt="all"],[data-bt="none"],[data-bt="only"]');
     if (!b) return;
     // Con un filtro activo, «Todos» y «Ninguno» afectan solo a los que se ven; «Seleccionar solo estos» deja fuera al resto.
@@ -1487,6 +1634,7 @@
     updateBtFoot();
   });
   $('#bt-modal').addEventListener('input', function (ev) {
+    if (ev.target.id === 'bs-pq') { bt.pq = ev.target.value; refreshPlayers(); return; }
     if (ev.target.id !== 'bt-pq') return;
     bt.q = ev.target.value; renderBtList(); // solo se repinta la lista: el campo conserva el foco
   });
@@ -1497,6 +1645,7 @@
     else if (t.classList.contains('bt-role')) { bt.role[bt.entries[+t.dataset.i].uid] = t.value; updateBtFoot(); }
     else if (t.id === 'bt-guild') { bt.guild = t.value; bt.q = ''; if (t.value) { state.prefs.guild = t.value; save(); } renderBattle(); }
     else if (t.id === 'bt-seen') { bt.includeSeen = t.checked; renderBattle(); }
+    else if (t.dataset && t.dataset.bt === 'psel') { bt.psel = t.value; var sc = $('#bt-body').scrollTop; renderBattle(); $('#bt-body').scrollTop = sc; }
   });
 
   /* ---------- Selector de items ---------- */

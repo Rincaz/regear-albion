@@ -743,3 +743,378 @@ html.gated body > *:not(.gate) { visibility: hidden; }
 .bt-pq { width: 100%; margin-bottom: 8px; }
 .bt-fsum { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 13px; color: var(--muted); }
 .bt-fsum b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---------- Resumen de la pelea ---------- */
+.bt-views {
+  margin-bottom: 12px;
+}
+
+.bs {
+  display: grid;
+  gap: 6px;
+}
+
+.bs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 12px;
+  background-color: var(--wash);
+  padding: 14px;
+}
+
+.bs-head > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.bs-head b {
+  font-family: var(--display);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.bs-head span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bs-stats {
+  margin: 0px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.bs-stats div {
+  display: grid;
+}
+
+.bs-stats dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bs-stats dd {
+  margin: 0px;
+  font-family: var(--display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  --tw-numeric-spacing: tabular-nums;
+  font-variant-numeric: var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction);
+  line-height: 1;
+}
+
+.bs-by {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bs-by .mtabs {
+  margin-bottom: 0px;
+}
+
+.bs-by .mtab {
+  min-height: 32px;
+  padding-left: 14px;
+  padding-right: 14px;
+  font-size: .95rem;
+  flex: 0 0 auto;
+}
+
+.bs-t {
+  margin-top: 14px;
+  margin-bottom: 4px;
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.bs-t small {
+  margin-left: 6px;
+  font-family: var(--body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.bs-scroll {
+  overflow: auto;
+  border-radius: 10px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line);
+  max-height: 420px;
+}
+
+.bs-tab {
+  width: 100%;
+  font-size: 13px;
+  --tw-numeric-spacing: tabular-nums;
+  font-variant-numeric: var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction);
+  border-collapse: collapse;
+}
+
+.bs-tab th, .bs-tab td {
+  white-space: nowrap;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.bs-tab thead th {
+  position: sticky;
+  top: 0px;
+  z-index: 1;
+  background-color: var(--wash);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.bs-tab tbody tr:last-child td, .bs-tab tbody tr:last-child th {
+  border-bottom: 0;
+}
+
+.bs-tab td:first-child {
+  position: relative;
+  white-space: normal;
+  min-width: 12rem;
+}
+
+.bs-tab small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.bs-bar {
+  position: absolute;
+  left: 0px;
+  bottom: 0px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: .6;
+}
+
+.bs-side {
+  cursor: pointer;
+  border-width: 0px;
+  background-color: transparent;
+  padding: 0px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bs-side:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.bs-mx th {
+  font-size: 12px;
+}
+
+.bs-mx tbody th {
+  background-color: var(--wash);
+}
+
+.bs-mx td {
+  text-align: center;
+  font-family: var(--mono);
+}
+
+.bs-mx td.hit {
+  font-weight: 600;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.bs-mx td.zero {
+  color: var(--muted);
+}
+
+.bs-mx td.same {
+  color: var(--muted);
+  background: var(--wash);
+}
+
+.bs-filters {
+  margin-bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bs-filters .pk-q {
+  height: 36px;
+  width: auto;
+  min-width: 0px;
+  flex: 1 1 200px;
+}
+
+.bs-p {
+  display: inline-flex;
+  min-width: 0px;
+  align-items: center;
+  gap: 6px;
+}
+
+.bs-p small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.bs-feed {
+  margin: 0px;
+  display: grid;
+  list-style-type: none;
+  gap: 4px;
+  padding: 0px;
+  max-height: 460px;
+  overflow: auto;
+}
+
+.bs-feed li {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line);
+  background-color: var(--panel);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-left: 10px;
+  padding-right: 10px;
+  font-size: 13px;
+  grid-template-columns: 4.6rem minmax(0, 1fr) auto minmax(0, 1fr) 3.6rem auto;
+}
+
+.bs-feed li.down {
+  border-left: 3px solid var(--danger);
+}
+
+.bs-feed li.up {
+  border-left: 3px solid var(--good);
+}
+
+.bs-feed .bs-p {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.bs-feed .bs-p small {
+  grid-column: 2;
+}
+
+.bs-time {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bs-fame {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .bs-feed li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .bs-feed .kb-arrow, .bs-time {
+    display: none;
+  }
+
+  .bs-fame {
+    text-align: left;
+  }
+}
+
+.bs-vs {
+  margin-top: 8px;
+  display: grid;
+  align-items: stretch;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.bs-vs-side {
+  display: grid;
+  cursor: pointer;
+  gap: 4px;
+  border-radius: 12px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--line);
+  background-color: var(--panel);
+  padding: 14px;
+  text-align: left;
+  box-shadow: var(--lift);
+}
+
+.bs-vs-side:hover {
+  border-color: var(--accent);
+}
+
+.bs-vs-side[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--soft, rgba(212, 168, 79, .25));
+}
+
+.bs-vs-side b {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.bs-vs-side span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bs-vs-side em {
+  font-weight: 600;
+  font-style: normal;
+}
+
+.bs-vs-x {
+  align-self: center;
+  font-family: var(--display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.bs-more {
+  margin-top: 4px;
+  margin-bottom: 0px;
+}
+
+@media (max-width: 560px) {
+  .bs-vs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bs-vs-x {
+    justify-self: center;
+  }
+}
