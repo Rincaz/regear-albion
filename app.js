@@ -127,7 +127,9 @@
       if (CITIES.indexOf(s.prefs.city) >= 0) out.prefs.city = s.prefs.city;
       if (ROLE_IDS.indexOf(s.prefs.role) >= 0) out.prefs.role = s.prefs.role;
       if (typeof s.prefs.guild === 'string') out.prefs.guild = s.prefs.guild.slice(0, 80);
-      if (s.prefs.mode === 'guides' || s.prefs.mode === 'players') out.prefs.mode = s.prefs.mode;
+      if (s.prefs.mode === 'guides' || s.prefs.mode === 'players' || s.prefs.mode === 'killboard') out.prefs.mode = s.prefs.mode;
+      var kg = s.prefs.kbGuild;
+      if (kg && typeof kg.id === 'string' && /^[A-Za-z0-9_-]{6,40}$/.test(kg.id)) out.prefs.kbGuild = { id: kg.id, name: String(kg.name || '').slice(0, 60), alliance: String(kg.alliance || '').slice(0, 20) };
     }
     if (s && s.prices && typeof s.prices === 'object') {
       Object.keys(s.prices).slice(0, 4000).forEach(function (id) {
@@ -449,7 +451,15 @@
     var host = $('#builds');
     var cur = state.prefs.role, html = '', gmode = state.prefs.mode === 'guides', src = curList();
     document.querySelectorAll('#mode-tabs [data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === state.prefs.mode)); });
-    var pmode = state.prefs.mode === 'players';
+    var pmode = state.prefs.mode === 'players', kmode = state.prefs.mode === 'killboard';
+    $('#kb').hidden = !kmode; host.hidden = kmode;
+    $('.col-builds .sec-h h2').textContent = kmode ? 'Killboard' : 'Builds';
+    if (kmode) {
+      ['#role-tabs', '#add', '#clear-builds', '#pl-tools', '#guide-hint', '#example-hint', '#regear-done'].forEach(function (x) { $(x).hidden = true; });
+      $('#bt-open').hidden = false;
+      renderKillboard();
+      return;
+    }
     $('#role-tabs').hidden = pmode; $('#add').hidden = pmode; $('#clear-builds').hidden = pmode; $('#pl-tools').hidden = !pmode;
     if (pmode) {
       $('#regear-done').hidden = false; $('#bt-open').hidden = false; $('#guide-hint').hidden = true; $('#example-hint').hidden = true;
@@ -1165,6 +1175,160 @@
     save(); closeBattle(); renderAll();
     flash('#top-status', made.length + (made.length === 1 ? ' build creada' : ' builds creadas') + ' para ' + people + (people === 1 ? ' regear' : ' regears') + ' (' + bt.guild + ').', 8000);
   }
+  /* ---------- Killboard del gremio ---------- */
+  // Muertes y kills recientes de un gremio (API gameinfo /events?guildId=). Desde aquí se ve el equipo de cada
+  // muerte y se puede mandar al regear sin importar la pelea entera.
+  var kb = { events: [], offset: 0, done: false, loading: false, err: '', filter: 'all', q: '', found: null, searching: false, added: {}, at: 0 };
+  var KB_PAGE = 30;
+  function relTime(ms) {
+    var d = Math.max(0, Date.now() - ms) / 1000;
+    if (d < 90) return 'hace un momento';
+    if (d < 3600) return 'hace ' + Math.round(d / 60) + ' min';
+    if (d < 86400) return 'hace ' + Math.round(d / 3600) + ' h';
+    return new Date(ms).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) + ' ' + new Date(ms).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+  }
+  function kbSide(p, gid) {
+    var w = p && p.Equipment && p.Equipment.MainHand, ti = w ? typeInfo(w.Type) : null, own = p && p.GuildId === gid;
+    return '<span class="kb-who' + (own ? ' own' : '') + '">' + (w ? iconHtml(w.Type, ti.name, true) : '<span class="ic sm"><span class="ph">?</span></span>') +
+      '<span class="kb-txt"><b class="kb-n">' + esc(p ? p.Name : '?') + '</b><span class="kb-g">' + esc(p && p.GuildName ? (p.AllianceName ? '[' + p.AllianceName + '] ' : '') + p.GuildName : 'Sin gremio') +
+      (p && p.AverageItemPower ? ' · ' + fmt.format(Math.round(p.AverageItemPower)) + ' IP' : '') + '</span>' + (ti ? '<span class="kb-w">' + esc(ti.name) + ' ' + esc(ti.tag) + '</span>' : '') + '</span></span>';
+  }
+  function kbAlreadyAdded(ev) {
+    if (kb.added[ev.EventId]) return true;
+    var t = Date.parse(ev.TimeStamp) || 0, name = ev.Victim && ev.Victim.Name;
+    return state.builds.some(function (b) { return b.kills && Object.keys(b.kills).some(function (j) { var k = b.kills[j]; return k && k.time === t && k.victim && k.victim.name === name; }); });
+  }
+  function renderKillboard() {
+    var box = $('#kb'), g = state.prefs.kbGuild, gid = g && g.id;
+    var head = g
+      ? '<div class="kb-guild"><span class="kb-gname">' + esc((g.alliance ? '[' + g.alliance + '] ' : '') + g.name) + '</span><span class="kb-srv">' + esc(SERVERS[state.prefs.server]) + '</span>' +
+        '<button type="button" class="btn sm" data-kb="change">Cambiar gremio</button><button type="button" class="btn sm" data-kb="refresh"' + (kb.loading ? ' disabled' : '') + '>Actualizar</button>' +
+        (kb.at ? '<span class="kb-at">Actualizado ' + esc(relTime(kb.at)) + '</span>' : '') + '</div>'
+      : '';
+    var picker = !g || kb.found
+      ? '<form class="kb-search" data-kb-form><label class="bt-lab" for="kb-q">Gremio del killboard</label><div class="bt-row"><input class="pk-q" id="kb-q" type="search" autocomplete="off" placeholder="Nombre del gremio o de un jugador del gremio" value="' + esc(kb.lastQ || state.prefs.guild || '') + '">' +
+        '<button class="btn primary" type="submit"' + (kb.searching ? ' disabled' : '') + '>' + (kb.searching ? 'Buscando…' : 'Buscar') + '</button></div>' +
+        (kb.found ? (kb.found.length ? '<div class="kb-found">' + kb.found.map(function (x, i) { return '<button type="button" class="chip" data-kb="pick" data-i="' + i + '">' + esc((x.alliance ? '[' + x.alliance + '] ' : '') + x.name) + (x.via ? ' <small>(' + esc(x.via) + ')</small>' : '') + '</button>'; }).join('') + '</div>'
+          : '<p class="hint">No encontré gremios con ese nombre en ' + esc(SERVERS[state.prefs.server]) + '. Prueba con una sola palabra del nombre, el nombre de un miembro, o cambia el servidor en el cofre.</p>') : '') + '</form>'
+      : '';
+    var tools = g ? '<div class="kb-tools"><div class="mtabs kb-filter" role="group" aria-label="Filtrar">' + [['all', 'Todo'], ['deaths', 'Muertes'], ['kills', 'Kills']].map(function (f) {
+      return '<button type="button" class="mtab" data-kb="filter" data-f="' + f[0] + '" aria-pressed="' + (kb.filter === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div>' +
+      '<input class="pk-q" id="kb-player" type="search" autocomplete="off" placeholder="Filtrar por jugador" value="' + esc(kb.q) + '" aria-label="Filtrar por jugador"></div>' : '';
+    var list = '';
+    if (g) {
+      var q = kb.q.trim().toLowerCase();
+      var rows = kb.events.filter(function (ev) {
+        var death = ev.Victim && ev.Victim.GuildId === gid;
+        if (kb.filter === 'deaths' && !death) return false;
+        if (kb.filter === 'kills' && death) return false;
+        if (q && ((ev.Killer && ev.Killer.Name) + ' ' + (ev.Victim && ev.Victim.Name)).toLowerCase().indexOf(q) < 0) return false;
+        return true;
+      });
+      var nd = kb.events.filter(function (ev) { return ev.Victim && ev.Victim.GuildId === gid; }).length;
+      list = (kb.events.length ? '<p class="kb-sum"><b>' + kb.events.length + '</b> eventos · <b class="down">' + nd + '</b> muertes · <b class="up">' + (kb.events.length - nd) + '</b> kills</p>' : '') +
+        (rows.length ? '<ul class="kb-list">' + rows.map(function (ev) {
+          var death = ev.Victim && ev.Victim.GuildId === gid, added = death && kbAlreadyAdded(ev);
+          return '<li class="kb-row ' + (death ? 'death' : 'kill') + '"><span class="kb-type">' + (death ? 'Muerte' : 'Kill') + '<small>' + esc(relTime(Date.parse(ev.TimeStamp) || 0)) + '</small></span>' +
+            kbSide(ev.Killer, gid) + '<span class="kb-arrow" aria-hidden="true">›</span>' + kbSide(ev.Victim, gid) +
+            '<span class="kb-fame">' + fmt.format(Math.round(ev.TotalVictimKillFame || 0)) + '<small>fama</small></span>' +
+            '<span class="kb-acts"><button type="button" class="btn sm" data-kb="view" data-ev="' + ev.EventId + '">Ver equipo</button>' +
+            (death ? '<button type="button" class="btn sm' + (added ? '' : ' primary') + '" data-kb="regear" data-ev="' + ev.EventId + '"' + (added ? ' disabled' : '') + '>' + (added ? 'En el regear' : 'Al regear') + '</button>' : '') + '</span></li>';
+        }).join('') + '</ul>' : (kb.loading ? '' : '<p class="empty">' + (kb.events.length ? 'Nada con ese filtro.' : (kb.err ? '' : 'Sin eventos recientes para este gremio.')) + '</p>')) +
+        (kb.err ? '<p class="status err">' + esc(kb.err) + '</p>' : '') +
+        (kb.loading ? '<p class="hint kb-loading">Consultando la API de Albion… puede tardar hasta un minuto si está lenta.</p>' : '') +
+        (kb.events.length && !kb.done && !kb.loading ? '<button type="button" class="btn kb-more" data-kb="more">Cargar más</button>' : '');
+    }
+    box.innerHTML = '<p class="hint">Kills y muertes recientes de tu gremio según la API oficial de Albion. «Al regear» agrega esa muerte a tus builds con el equipo con que murió.</p>' + head + picker + tools + list;
+    wireIcons(box);
+    if (g && !kb.events.length && !kb.loading && !kb.err && kb.gid !== gid) kbLoad(true);
+  }
+  async function kbLoad(reset) {
+    var g = state.prefs.kbGuild;
+    if (!g || kb.loading) return;
+    if (reset) { kb.events = []; kb.offset = 0; kb.done = false; }
+    kb.gid = g.id; kb.loading = true; kb.err = ''; renderKillboard();
+    try {
+      await detectProxy();
+      if (!proxyOn) throw new Error('sin puente');
+      var page = await getJson(apiBase(state.prefs.server) + '/events?limit=' + KB_PAGE + '&offset=' + kb.offset + '&guildId=' + encodeURIComponent(g.id));
+      if (state.prefs.kbGuild !== g) return;
+      var seen = {}; kb.events.forEach(function (e) { seen[e.EventId] = 1; });
+      (Array.isArray(page) ? page : []).forEach(function (e) { if (e && e.EventId && !seen[e.EventId]) kb.events.push(e); });
+      kb.offset += KB_PAGE;
+      kb.done = !Array.isArray(page) || page.length < KB_PAGE || kb.offset >= 1000;
+      kb.at = Date.now();
+    } catch (e) {
+      kb.err = e && e.message === 'sin puente'
+        ? 'Para el killboard hace falta el puente hacia la API de Albion (la página publicada en Vercel ya lo trae; en local usa «npm start»).'
+        : 'La API de Albion no respondió (' + (e && e.message || 'sin conexión') + '). Pulsa «Actualizar» en un momento.';
+    } finally {
+      kb.loading = false;
+      if (state.prefs.mode === 'killboard') renderKillboard();
+    }
+  }
+  async function kbSearch(q) {
+    q = q.trim();
+    if (q.length < 3) { kb.err = ''; kb.found = []; renderKillboard(); return; }
+    kb.searching = true; kb.lastQ = q; renderKillboard();
+    try {
+      await detectProxy();
+      if (!proxyOn) throw new Error('sin puente');
+      var r = await getJson(apiBase(state.prefs.server) + '/search?q=' + encodeURIComponent(q)), out = [], ids = {};
+      (r.guilds || []).forEach(function (x) { if (x.Id && !ids[x.Id]) { ids[x.Id] = 1; out.push({ id: x.Id, name: x.Name, alliance: x.AllianceName || '' }); } });
+      // Si se buscó a un jugador, se ofrece su gremio.
+      (r.players || []).forEach(function (x) { if (x.GuildId && !ids[x.GuildId]) { ids[x.GuildId] = 1; out.push({ id: x.GuildId, name: x.GuildName, alliance: x.AllianceName || '', via: 'gremio de ' + x.Name }); } });
+      kb.found = out.slice(0, 12);
+    } catch (e) {
+      kb.found = null;
+      kb.err = 'No se pudo buscar el gremio: ' + (e && e.message === 'sin puente' ? 'falta el puente hacia la API de Albion.' : (e && e.message || 'sin conexión') + '.');
+    } finally { kb.searching = false; renderKillboard(); }
+  }
+  function kbRegear(ev) {
+    var v = ev.Victim, gear = gearFrom(v && v.Equipment);
+    if (!hasGear(gear)) { flash('#top-status', 'Esa muerte no tiene equipo para regear.', 6000); return; }
+    var kill = cleanKill(killInfo(ev)), key = JSON.stringify(gear.slots);
+    // Si ya hay una build con exactamente el mismo equipo, se suma el jugador a esa build.
+    var same = state.builds.filter(function (b) { return JSON.stringify(Object.keys(b.slots).sort().reduce(function (o, k) { var it = b.slots[k]; o[k] = { key: it.key, tier: it.tier, ench: it.ench, qty: it.qty }; return o; }, {})) === JSON.stringify(Object.keys(gear.slots).sort().reduce(function (o, k) { o[k] = gear.slots[k]; return o; }, {})); })[0];
+    if (same) {
+      var j = same.players; same.players = Math.min(99, same.players + 1);
+      same.members = (same.members || []).slice(0, j); while (same.members.length < j) same.members.push('');
+      same.members.push(v.Name);
+      if (kill) { same.kills = same.kills || {}; same.kills[j] = kill; }
+    } else {
+      var w = gear.slots.weapon, name = w ? nameOf(byKey.get(w.key), w.tier) + ' ' + tagText(w.tier, w.ench) : 'Build';
+      state.builds.push(cleanBuild({ name: name, role: guessRole(gear.slots), players: 1, slots: gear.slots, members: [v.Name], kills: kill ? { 0: kill } : undefined }));
+    }
+    kb.added[ev.EventId] = 1;
+    save(); renderAll();
+    flash('#top-status', 'Se agregó a ' + v.Name + ' al regear' + (same ? ' (build «' + same.name + '»)' : '') + (gear.unknown.length ? ' · ' + gear.unknown.length + ' items no reconocidos' : '') + '.', 7000);
+  }
+  $('#kb').addEventListener('submit', function (ev) {
+    if (!ev.target.closest('[data-kb-form]')) return;
+    ev.preventDefault(); kb.err = ''; kbSearch($('#kb-q').value);
+  });
+  $('#kb').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-kb]');
+    if (!b) return;
+    var a = b.dataset.kb, e = a === 'view' || a === 'regear' ? kb.events.filter(function (x) { return String(x.EventId) === b.dataset.ev; })[0] : null;
+    if (a === 'change') { kb.found = []; kb.err = ''; renderKillboard(); var qi = $('#kb-q'); if (qi) qi.focus(); }
+    else if (a === 'pick') {
+      var x = kb.found[+b.dataset.i];
+      state.prefs.kbGuild = { id: x.id, name: x.name, alliance: x.alliance }; save();
+      kb.found = null; kb.events = []; kb.gid = null; kb.err = ''; kbLoad(true);
+    }
+    else if (a === 'refresh') kbLoad(true);
+    else if (a === 'more') kbLoad(false);
+    else if (a === 'filter') { kb.filter = b.dataset.f; renderKillboard(); }
+    else if (a === 'view' && e) openKill({ kill: killInfo(e) });
+    else if (a === 'regear' && e) kbRegear(e);
+  });
+  $('#kb').addEventListener('input', function (ev) {
+    if (ev.target.id !== 'kb-player') return;
+    kb.q = ev.target.value;
+    var pos = ev.target.selectionStart; renderKillboard();
+    var el = $('#kb-player'); el.focus(); try { el.setSelectionRange(pos, pos); } catch (e2) { /* sin cursor */ }
+  });
+
   /* ---------- Ver quién lo mató ---------- */
   var KILL_GRID = [['Bag', 'Head', 'Cape'], ['MainHand', 'Armor', 'OffHand'], ['Potion', 'Shoes', 'Food'], [null, 'Mount', null]];
   function typeInfo(type) {
