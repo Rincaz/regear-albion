@@ -1,0 +1,9 @@
+{
+  "name": "regear-albion",
+  "version": "1.0.0",
+  "description": "Calculadora de regear para Albion Online: items del cofre, materiales, artefactos y silver aproximado.",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  }
+}

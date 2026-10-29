@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stock · Regear Albion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1c6a85">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="stock-page">
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Stock</h1>
+      <p>Todo lo que tienes guardado y dónde está: items, materiales y especiales (monturas, bolsos, pociones y comida). Lo que anotes aquí se descuenta automáticamente de lo que hay que sacar en las builds.</p>
+    </div>
+    <div class="px"><a class="btn" href="index.html">← Builds</a><button class="btn" id="pwa-install" type="button" hidden>Instalar app</button><button class="btn" id="theme" type="button">Modo oscuro</button></div>
+  </header>
+  <div class="cloud-bar" id="cloud-bar" hidden></div>
+
+  <section class="sk-panel">
+    <div class="tabs" role="tablist" aria-label="Tipo de stock">
+      <button type="button" role="tab" data-tab="items" aria-selected="true">Items <b id="n-items">0</b></button>
+      <button type="button" role="tab" data-tab="mats" aria-selected="false">Materiales <b id="n-mats">0</b></button>
+      <button type="button" role="tab" data-tab="special" aria-selected="false">Especiales <b id="n-special">0</b></button>
+      <button type="button" role="tab" data-tab="moves" aria-selected="false">Movimientos <b id="n-moves">0</b></button>
+    </div>
+    <div class="sk-bar">
+      <input class="pk-q" id="sk-q" type="search" placeholder="Buscar en el stock" autocomplete="off" aria-label="Buscar en el stock">
+      <select class="sel" id="sk-place" aria-label="Filtrar por lugar"></select>
+      <select class="sel" id="sk-group" aria-label="Agrupar"><option value="type">Agrupar por tipo</option><option value="place">Agrupar por lugar</option></select>
+      <label class="sk-eq"><input type="checkbox" id="sk-eq" checked> Unir equivalentes</label>
+      <button class="btn primary" id="sk-add" type="button">+ Agregar</button>
+      <button class="btn danger" id="sk-clear" type="button">Vaciar</button>
+    </div>
+    <div class="sk-bar" id="mv-bar" hidden>
+      <select class="sel" id="mv-player" aria-label="Filtrar por jugador"></select>
+      <select class="sel" id="mv-kind" aria-label="Tipo de movimiento"><option value="all">Ingresos y retiros</option><option value="in">Solo ingresos</option><option value="out">Solo retiros</option></select>
+    </div>
+    <div class="sk-places" id="sk-places"></div>
+    <p class="hint sk-hint">Items equivalentes: el mismo item con igual tier + encantamiento (por ejemplo 6.3 = 7.2 = 8.1) cuenta como un solo stock en las builds. Aquí cada uno se guarda tal como lo tienes.</p>
+    <p class="status" id="sk-status" role="status"></p>
+    <details class="pdet sk-log" id="lg">
+      <summary>Importar registro del banco (archivo de movimientos)</summary>
+      <p>Sube o pega el registro del banco del gremio (Fecha, Jugador, Objeto, Encantamiento, Calidad, Cantidad). Los depósitos suman y los retiros restan al stock actual. Las líneas ya aplicadas antes se saltan, así que puedes subir registros que se solapan. La calidad se ignora.</p>
+      <div class="sk-dest"><label>Desde (fecha del registro) <input class="pk-q sm" id="lg-since" placeholder="2026-10-29 17:00:00" maxlength="19" autocomplete="off"></label> <label>Lugar <input class="pk-q sm" id="lg-place" list="places" value="Ho Hollow" maxlength="40" autocomplete="off"></label>
+        <label>Archivo <input id="lg-file" type="file" accept=".txt,.tsv,.csv,text/plain"></label></div>
+      <textarea id="lg-text" rows="5" spellcheck="false" aria-label="Registro del banco"></textarea>
+      <div class="m-actions" style="margin-top:6px">
+        <button class="btn" id="lg-prev" type="button">Vista previa</button>
+        <button class="btn primary" id="lg-apply" type="button" disabled>Aplicar al stock</button>
+      </div>
+      <div id="lg-out"></div>
+    </details>
+    <details class="pdet sk-qk" id="qk">
+      <summary>Carga rápida: items de mis builds</summary>
+      <p>Escribe cuántos tienes de cada item que piden tus builds. Se guarda en el lugar indicado; lo que dejes vacío no se toca.</p>
+      <div class="sk-dest"><label>Lugar <input class="pk-q sm" id="qk-place" list="places" value="Ho Hollow" maxlength="40" autocomplete="off"></label>
+        <button class="btn primary" id="qk-save" type="button">Guardar cantidades</button></div>
+      <div id="qk-body"></div>
+    </details>
+    <details class="pdet sk-io">
+      <summary>Cargar o copiar stock (JSON)</summary>
+      <p>Formato: una lista de <code>{"id": "T8_MAIN_MACE@1", "place": "Ho Hollow", "qty": 3}</code>. «Agregar» suma las cantidades al stock actual.</p>
+      <textarea id="sk-json" rows="6" spellcheck="false" aria-label="JSON de stock"></textarea>
+      <div class="m-actions" style="margin-top:6px">
+        <button class="btn primary" id="sk-load" type="button">Agregar al stock</button>
+        <button class="btn" id="sk-copy" type="button">Copiar stock actual</button>
+      </div>
+    </details>
+    <div id="sk-body"></div>
+  </section>
+</div>
+
+<div class="overlay" id="picker" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pk-title">
+    <div class="pk-head">
+      <h2 id="pk-title">Agregar al stock</h2>
+      <button class="btn" type="button" data-pk="close">Cerrar</button>
+    </div>
+    <div class="pk-ctl">
+      <input class="pk-q" id="pk-q" type="search" placeholder="Buscar por nombre (español o inglés)" autocomplete="off" aria-label="Buscar item">
+      <div class="chips" id="pk-slots" role="group" aria-label="Tipo de item"></div>
+      <div class="chips" id="pk-tiers" role="group" aria-label="Tier"></div>
+      <div class="chips" id="pk-ench" role="group" aria-label="Encantamiento"></div>
+      <div class="sk-dest">
+        <label>Lugar <input class="pk-q sm" id="pk-place" list="places" placeholder="Ej: Cofre Caerleon" maxlength="40" autocomplete="off"></label>
+        <label>Cantidad <input class="pk-q sm" id="pk-qty" type="number" inputmode="numeric" min="1" max="99999" value="1"></label>
+      </div>
+    </div>
+    <p class="status pk-note" id="pk-note" role="status">Toca un item para sumarlo al stock en ese lugar.</p>
+    <ul class="pk-list" id="pk-list"></ul>
+  </div>
+</div>
+<datalist id="places"></datalist>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="cloud.js"></script>
+<script src="pwa.js"></script>
+<script src="data.js"></script>
+<script src="stock.js"></script>
+</body>
+</html>

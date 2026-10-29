@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Regear Albion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1c6a85">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" id="wrap" data-view="builds">
+  <header class="top">
+    <div>
+      <h1>Regear Albion</h1>
+      <p>Arma las builds, indica cuántos jugadores van con cada una y mira cuántos items hay que sacar del cofre.</p>
+    </div>
+    <div class="px"><a class="btn" href="stock.html">Ver stock</a><button class="btn" id="pwa-install" type="button" hidden>Instalar app</button><button class="btn" id="theme" type="button">Modo oscuro</button></div>
+  </header>
+  <div class="cloud-bar" id="cloud-bar" hidden></div>
+
+  <div class="layout">
+    <main class="col-builds">
+      <div class="sec-h">
+        <h2>Builds</h2>
+        <div class="px">
+          <button class="btn" id="regear-done" type="button" title="Descuenta del stock todos los items de las builds y limpia las builds">Reequip listo</button>
+          <button class="btn danger" id="clear-builds" type="button">Limpiar builds</button>
+          <button class="btn" id="bt-open" type="button">Importar pelea</button>
+          <button class="btn primary" id="add" type="button">+ Nueva build / guía</button>
+        </div>
+      </div>
+      <div class="mtabs" id="mode-tabs" role="group" aria-label="Tipo de builds">
+        <button type="button" class="mtab" data-mode="builds" aria-pressed="true">Builds de regear</button>
+        <button type="button" class="mtab" data-mode="guides" aria-pressed="false">Builds guía</button>
+        <button type="button" class="mtab" data-mode="players" aria-pressed="false">Por jugador</button>
+      </div>
+      <div class="pl-tools" id="pl-tools" hidden>
+        <input class="pk-q" id="pl-q" type="search" placeholder="Buscar jugador o build" autocomplete="off" aria-label="Buscar jugador">
+        <button class="btn" id="pl-allow" type="button">Permitir todos</button>
+        <p class="hint" id="pl-sum" style="flex:1 0 100%;margin:0"></p>
+      </div>
+      <p class="hint" id="guide-hint" hidden>Las guías fijan el tier mínimo por slot. Al importar una pelea, el jugador que muera con la misma arma y lleve menos tier + encantamiento que la guía aparece en rojo con su nombre.</p>
+      <p class="status" id="top-status" role="status"></p>
+      <div class="rtabs" id="role-tabs" role="group" aria-label="Rol de las builds"></div>
+      <p class="hint" id="example-hint" hidden>Las builds «Ejemplo» son de muestra. Cámbiales el nombre o bórralas.</p>
+      <div id="builds"></div>
+
+      <details class="backup">
+        <summary>Respaldo de builds</summary>
+        <p>Las builds se guardan solas en este navegador. Copia el JSON para llevarlas a otro dispositivo y pégalo allá para cargarlas.</p>
+        <textarea id="json" rows="6" aria-label="JSON de builds" spellcheck="false"></textarea>
+        <div class="acts">
+          <button class="btn" id="exp" type="button">Copiar JSON</button>
+          <button class="btn" id="imp" type="button">Cargar JSON pegado</button>
+        </div>
+        <p class="status" id="b-status" role="status"></p>
+      </details>
+    </main>
+
+    <aside class="col-chest">
+      <section class="manifest" id="manifest" aria-label="Cofre">
+        <div class="tabs" role="tablist" aria-label="Vista del cofre">
+          <button type="button" role="tab" data-tab="items" aria-selected="true">Items</button>
+          <button type="button" role="tab" data-tab="mats" aria-selected="false">Materiales y silver</button>
+          <a class="tab-link" href="stock.html">Stock ↗</a>
+        </div>
+        <div class="pricebar">
+          <div class="px">
+            <select class="sel" id="srv" aria-label="Servidor"></select>
+            <select class="sel" id="city" aria-label="Ciudad de precios"></select>
+            <button class="btn primary" id="px-api" type="button">Actualizar precios (API)</button>
+          </div>
+          <p class="status" id="s-status" role="status"></p>
+        </div>
+        <div class="pane" id="panel-items" role="tabpanel">
+        <div class="m-top">
+          <div class="m-total"><span class="m-num" id="m-num">0</span><span class="m-cap">items a sacar</span></div>
+          <div class="m-stats" id="m-stats"></div>
+          <div class="m-total"><span class="m-num sm" id="i-num">0</span><span class="m-cap">silver aprox. de los items que faltan (precio de mercado)</span></div>
+          <p class="warn" id="i-warn"></p>
+          <div class="bar" aria-hidden="true"><span id="m-bar"></span></div>
+          <div class="m-actions">
+            <button class="btn primary" id="copy" type="button">Copiar lista</button>
+            <button class="btn" id="clear-checks" type="button" title="Quita las marcas y devuelve al stock lo sacado">Limpiar marcas</button>
+          </div>
+          <p class="status" id="m-status" role="status"></p>
+          <textarea class="fb" id="copy-fb" rows="8" readonly hidden aria-label="Lista para copiar"></textarea>
+        </div>
+        <div class="m-body" id="manifest-body"></div>
+        </div>
+
+        <div class="pane" id="panel-mats" role="tabpanel" hidden>
+          <div class="m-top">
+            <div class="m-total"><span class="m-num sm" id="s-num">0</span><span class="m-cap">silver aprox. en materiales</span></div>
+            <div class="m-stats" id="s-stats"></div>
+            <p class="warn" id="s-warn"></p>
+            <p class="hint" style="margin:0">Costo de craftear solo los items que faltan según el stock, con materiales comprados. No descuenta retorno de recursos, enfoque ni tasa de estación.</p>
+            <div class="m-actions">
+              <button class="btn" id="copy-mats" type="button">Copiar materiales</button>
+              <button class="btn danger" id="px-clear" type="button">Borrar precios</button>
+            </div>
+            <textarea class="fb" id="mats-fb" rows="8" readonly hidden aria-label="Materiales para copiar"></textarea>
+            <details class="pdet">
+              <summary>Pegar precios</summary>
+              <p>Una línea por material con su nombre y el precio por unidad. Ejemplo: Tablas de maderablanca 1500. Si el nombre se repite en varios tiers, agrega el tier: Lingote de adamantio T8.1 4200</p>
+              <textarea id="px-text" rows="4" spellcheck="false" aria-label="Precios pegados"></textarea>
+              <div class="m-actions" style="margin-top:6px"><button class="btn" id="px-load" type="button">Cargar precios</button></div>
+            </details>
+          </div>
+          <div class="m-body" id="mats-body"></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <p class="foot">Items y recetas: ao-data/ao-bin-dumps (datos del juego, nombres en español). Precios: Albion Online Data Project y iconos de render.albiononline.com; ambos solo conectan al alojar la página fuera de Claude.</p>
+</div>
+
+<nav class="mbar" aria-label="Vista">
+  <button class="seg" type="button" data-view="builds" aria-pressed="true">Builds</button>
+  <button class="seg" type="button" data-view="chest" aria-pressed="false">Cofre<b id="mb-count">0</b></button>
+</nav>
+
+<div class="overlay" id="bt-modal" hidden>
+  <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="bt-title">
+    <div class="pk-head">
+      <h2 id="bt-title">Importar pelea</h2>
+      <button class="btn" type="button" data-bt="close">Cerrar</button>
+    </div>
+    <div class="bt-ctl">
+      <label class="bt-lab" for="bt-ids">ID o enlace de la pelea (AlbionZvZ, AlbionBB o killboard oficial)</label>
+      <div class="bt-row">
+        <input class="pk-q" id="bt-ids" type="text" placeholder="Ej: https://www.albionzvz.com/battles/123456789 o solo el ID" autocomplete="off">
+        <select class="sel" id="bt-server" aria-label="Servidor"></select>
+        <button class="btn primary" id="bt-go" type="button">Buscar</button>
+      </div>
+      <p class="bt-find"><a href="https://www.albionzvz.com/battles" target="_blank" rel="noopener noreferrer">Buscar peleas en AlbionZvZ</a> y pega aquí el enlace de la que quieras.</p>
+      <p class="status" id="bt-status" role="status"></p>
+    </div>
+    <div class="bt-body" id="bt-body"></div>
+    <details class="pdet bt-paste">
+      <summary>¿No carga? Pegar el JSON de la pelea</summary>
+      <p>Abre estos enlaces en el navegador, copia el texto de cada uno y pégalo aquí (puedes pegar varios seguidos): <code id="bt-links"></code> Si la pelea tiene más de 51 eventos, abre también con offset=51, offset=102 y así.</p>
+      <textarea id="bt-paste" rows="4" spellcheck="false" aria-label="JSON de la pelea"></textarea>
+      <div class="m-actions" style="margin-top:6px"><button class="btn" id="bt-paste-go" type="button">Usar JSON pegado</button></div>
+    </details>
+    <div class="bt-foot" id="bt-foot" hidden>
+      <span class="bt-count" id="bt-count"></span>
+      <div class="bt-mode" role="radiogroup" aria-label="Qué hacer con las builds">
+        <label><input type="radio" name="bt-mode" value="add" checked> Agregar a mis builds</label>
+        <label><input type="radio" name="bt-mode" value="replace"> Reemplazar mis builds</label>
+        <label><input type="radio" name="bt-mode" value="kills"> Solo agregar las muertes a mis builds</label>
+      </div>
+      <button class="btn primary" id="bt-add" type="button">Crear builds</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="kill-modal" hidden>
+  <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="kill-title">
+    <div class="pk-head">
+      <h2 id="kill-title">Detalle de la muerte</h2>
+      <button class="btn" type="button" data-kill-close>Cerrar</button>
+    </div>
+    <div class="kg-wrap" id="kill-body"></div>
+  </div>
+</div>
+
+<div class="overlay" id="picker" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pk-title">
+    <div class="pk-head">
+      <h2 id="pk-title">Elegir item</h2>
+      <button class="btn" type="button" data-pk="close">Cerrar</button>
+    </div>
+    <div class="pk-ctl">
+      <input class="pk-q" id="pk-q" type="search" placeholder="Buscar por nombre (español o inglés)" autocomplete="off" aria-label="Buscar item">
+      <div class="chips" id="pk-tiers" role="group" aria-label="Tier"></div>
+      <div class="chips" id="pk-ench" role="group" aria-label="Encantamiento"></div>
+    </div>
+    <ul class="pk-list" id="pk-list"></ul>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="cloud.js"></script>
+<script src="pwa.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

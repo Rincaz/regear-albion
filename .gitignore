@@ -1,0 +1,5 @@
+# Registros del banco y datos de jugadores: no se publican
+registro*.txt
+*.log
+node_modules/
+.vscode/
