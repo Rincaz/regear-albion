@@ -1,0 +1,4 @@
+# Solo para uso local (npm start): en Vercel la detectaría como servidor y respondería todas las rutas
+server.js
+supabase/
+tools/*.py
