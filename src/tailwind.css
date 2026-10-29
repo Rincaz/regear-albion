@@ -10,17 +10,20 @@
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --bg: #e6ebee;
-  --panel: #f6f8f9;
-  --wash: #eaeff2;
-  --ink: #14232c;
-  --muted: #566873;
-  --line: #c6d1d7;
-  --accent: #1c6a85;
-  --accent-ink: #ffffff;
-  --danger: #b0352a;
-  --good: #2b7a4b;
-  --shade: rgba(8, 14, 18, .55);
+  /* Claro: piedra azulada con latón (el dorado de la interfaz de Albion), contraste suave. */
+  --bg: #e9ecef;
+  --panel: #fbfbfa;
+  --wash: #f1f3f4;
+  --ink: #232a33;
+  --muted: #5f6975;
+  --line: #d6dbe0;
+  --accent: #86621a;
+  --accent-ink: #fffaf0;
+  --danger: #b23b2e;
+  --good: #2d7a4f;
+  --shade: rgba(20, 24, 30, .5);
+  --lift: 0 1px 2px rgba(30, 36, 44, .06), 0 6px 18px -10px rgba(30, 36, 44, .18);
+  --soft: color-mix(in srgb, var(--accent) 12%, transparent);
 
   --t1: #6d7783; --t2: #6d7783;
   --t3: #2b7a4b; --t4: #2f6fc0; --t5: #c2413a; --t6: #c2701a; --t7: #94790a; --t8: #5d6874;
@@ -29,8 +32,9 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d151a; --panel: #141f26; --wash: #192630; --ink: #e4ecf0; --muted: #8fa3ae; --line: #27363f;
-    --accent: #6bb8d4; --accent-ink: #06222c; --danger: #ef7266; --good: #58c486; --shade: rgba(0, 0, 0, .65);
+    --bg: #13171d; --panel: #1a1f27; --wash: #212731; --ink: #e5e1d8; --muted: #9aa1ab; --line: #2d343f;
+    --accent: #d4a84f; --accent-ink: #1d1606; --danger: #e8786c; --good: #6cc28a; --shade: rgba(5, 7, 10, .7);
+    --lift: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 24px -14px rgba(0, 0, 0, .6);
     --t1: #9aa5b0; --t2: #9aa5b0;
     --t3: #58c486; --t4: #5b9bef; --t5: #ef6f66; --t6: #f09a47; --t7: #e6c84a; --t8: #dbe1e8;
     --e1: #58c486; --e2: #5b9bef; --e3: #b48cf0; --e4: #e6c84a;
@@ -39,8 +43,9 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d151a; --panel: #141f26; --wash: #192630; --ink: #e4ecf0; --muted: #8fa3ae; --line: #27363f;
-  --accent: #6bb8d4; --accent-ink: #06222c; --danger: #ef7266; --good: #58c486; --shade: rgba(0, 0, 0, .65);
+  --bg: #13171d; --panel: #1a1f27; --wash: #212731; --ink: #e5e1d8; --muted: #9aa1ab; --line: #2d343f;
+  --accent: #d4a84f; --accent-ink: #1d1606; --danger: #e8786c; --good: #6cc28a; --shade: rgba(5, 7, 10, .7);
+  --lift: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 24px -14px rgba(0, 0, 0, .6);
   --t1: #9aa5b0; --t2: #9aa5b0;
   --t3: #58c486; --t4: #5b9bef; --t5: #ef6f66; --t6: #f09a47; --t7: #e6c84a; --t8: #dbe1e8;
   --e1: #58c486; --e2: #5b9bef; --e3: #b48cf0; --e4: #e6c84a;
@@ -1220,3 +1225,109 @@ a.btn {
 .cloud-bar .sel.sm {
   @apply h-[30px];
 }
+
+
+/* ---------- Estilo visual: lectura cómoda en sesiones largas ----------
+   Menos mayúsculas, más aire, esquinas suaves y relieve solo donde hay jerarquía (paneles y ventanas). */
+body {
+  @apply leading-[1.5] antialiased;
+}
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+:focus-visible { outline-color: var(--accent); }
+
+/* Encabezados en tipo de texto normal (las mayúsculas cansan en listas largas) */
+.top h1, .sec-h h2, .role-h, .rtab, .s-label, .grp h3, .tabs button, .mtab, .pk-head h2, .chips .lab, .bt-lab,
+.r-state, .stk-lab, .pl-st, .pcs-l, .pcs-x, .kg-t, .kg-inv-t, .tab-link, .b-name, .under-tag {
+  text-transform: none;
+  letter-spacing: .01em;
+}
+.top h1 { @apply text-[2.4rem] font-bold tracking-[.005em]; }
+.top h1::before {
+  content: ""; display: inline-block; width: .9em; height: .9em; margin-right: .3em; vertical-align: -.08em;
+  background: url("icons/icon-192.png") center / cover; border-radius: 22%;
+}
+.sec-h h2 { @apply text-[1.55rem]; }
+.role-h { @apply text-[1.35rem] border-b-0 pb-0; }
+.s-label, .chips .lab, .bt-lab, .stk-lab, .pcs-l { @apply font-body font-medium text-[12px] text-muted; }
+.grp h3 { @apply font-body font-semibold text-[13px] text-muted mt-[18px] mb-[4px]; }
+.r-state, .pl-st, .pcs-x { @apply font-body font-semibold text-[12px]; }
+
+/* Paneles: radio mayor y relieve leve; los controles, radio menor */
+.build, .manifest, .sheet, .pl-card, .sk-panel, .cloud-bar, .backup {
+  @apply rounded-[12px];
+  box-shadow: var(--lift);
+}
+.build { @apply p-[18px] gap-[14px]; }
+.sheet { @apply rounded-[14px]; }
+.btn, .chip, .pk-q, .sel, .step, .slot, .rtab, .mtab, .st-in, .pl-num, .qty-in, .px-in, .fb, .pl-chip-s, .seg {
+  @apply rounded-[8px];
+}
+.ic { @apply rounded-[8px]; }
+
+/* Botones: más presencia y estados claros */
+.btn { @apply min-h-[36px] px-[14px] font-semibold text-[13px]; transition: background-color .15s, border-color .15s, color .15s; }
+.btn:hover { background: var(--wash); }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+.btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: var(--danger); }
+.btn.sm { @apply min-h-[30px] px-[10px] rounded-[7px]; }
+
+/* Pestañas de modo y de rol como control segmentado */
+.mtabs { @apply p-[4px] gap-[4px] bg-wash border border-line border-solid rounded-[10px]; }
+.mtab { @apply border-transparent bg-transparent text-muted text-[1.05rem] min-h-[38px]; }
+.mtab:hover { color: var(--ink); }
+.mtab[aria-pressed="true"] { background: var(--panel); border-color: var(--line); color: var(--ink); box-shadow: var(--lift); }
+.rtab { @apply text-[1.05rem] bg-panel min-h-[44px]; border-bottom-width: 3px; }
+.rtab[aria-pressed="true"] { background: color-mix(in srgb, var(--rc) 10%, var(--panel)); }
+
+/* Huecos de equipo: fondo calmado, el item destaca por su nombre */
+.slot { background: var(--wash); border-color: transparent; }
+.slot:hover { border-color: var(--line); }
+.slot.under { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, var(--wash)); }
+.s-name { @apply font-semibold; }
+
+/* Cofre: columna fija con relieve; filas más espaciadas */
+.manifest { @apply overflow-hidden; }
+.m-top { @apply p-[18px]; }
+.m-num { @apply text-[3.4rem]; color: var(--ink); }
+.bar { @apply h-[8px] rounded-[99px]; }
+.bar span { @apply rounded-[99px]; }
+.row { @apply py-[10px]; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs button { @apply text-[1.05rem]; }
+
+/* Campos */
+.pk-q, .sel, .st-in, .pl-num, .qty-in, .px-in { background: var(--panel); transition: border-color .15s; }
+.pk-q:hover, .sel:hover { border-color: color-mix(in srgb, var(--muted) 60%, var(--line)); }
+.pk-q:focus, .sel:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--soft, rgba(212, 168, 79, .2)); }
+
+/* Barra de la nube */
+.cloud-bar { @apply px-[14px] py-[10px]; }
+
+/* Etiquetas de tier: píldora con fondo tenue del mismo color */
+.tag { @apply rounded-[6px] px-[6px]; background: color-mix(in srgb, currentColor 10%, transparent); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+
+@media (prefers-reduced-motion: reduce) { .btn, .pk-q, .sel { transition: none; } }
+
+/* ---------- Pantalla de inicio de sesión ---------- */
+html.gated body > *:not(.gate) { visibility: hidden; }
+.gate {
+  @apply fixed inset-0 z-[80] grid place-items-center overflow-auto bg-bg;
+  padding: max(20px, env(safe-area-inset-top, 0px)) 16px max(20px, env(safe-area-inset-bottom, 0px));
+  background:
+    radial-gradient(1200px 500px at 50% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    var(--bg);
+}
+.gate-card { @apply w-full max-w-[420px] grid gap-[18px] p-[28px] bg-panel border border-line border-solid rounded-[16px]; box-shadow: var(--lift); }
+.gate-brand { @apply flex items-center gap-[14px]; }
+.gate-brand img { @apply w-[52px] h-[52px] rounded-[12px] flex-none; }
+.gate-brand h1 { @apply m-0 font-display font-bold text-[2rem] leading-none; }
+.gate-brand p { @apply mt-[4px] mb-0 text-muted text-[14px]; }
+.gate-form { @apply grid gap-[12px]; }
+.gate-form label { @apply grid gap-[6px] text-[13px] font-medium text-muted; }
+.gate-form .pk-q { @apply h-[44px] text-[16px]; }
+.gate-form .btn { @apply flex items-center min-h-[44px] text-[14px] w-full justify-center; }
+.gate .cl-msg { @apply m-0 text-[13px] text-danger; }
+.gate .cl-msg.ok { @apply text-good; }
+.gate-note { @apply m-0 text-[13px] text-muted; }
+.gate-skip { @apply justify-self-center p-[6px] border-0 bg-transparent text-[13px] text-muted underline; text-underline-offset: 3px; }
+.gate-skip:hover { color: var(--ink); }

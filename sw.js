@@ -1,7 +1,7 @@
 // Service worker: guarda la app para abrirla sin conexión.
 // Archivos propios: red primero (así llegan las actualizaciones) y, si no hay red, la copia guardada.
 // Supabase, la API de Albion y los precios nunca se guardan: siempre van a la red.
-const CACHE = 'regear-v1';
+const CACHE = 'regear-v2';
 const SHELL = ['./', './index.html', './stock.html', './style.css', './data.js', './app.js', './stock.js', './config.js', './cloud.js', './pwa.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 

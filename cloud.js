@@ -36,6 +36,11 @@
     bar.innerHTML = '<span class="cl-ico" aria-hidden="true">☁</span><span class="cl-st warn">Sin conexión con la nube: trabajas con los datos de este navegador.</span>';
     return;
   }
+  // Sin sesión guardada se oculta la app desde el principio, para que lo primero que se vea sea el inicio de sesión.
+  try {
+    var hasToken = Object.keys(localStorage).some(function (k) { return /^sb-.*-auth-token$/.test(k); });
+    if (!hasToken && sessionStorage.getItem('regear-gate-skip') !== '1' && !/access_token=|error_description=/.test(location.hash)) document.documentElement.classList.add('gated');
+  } catch (e) { /* sin almacenamiento: no se oculta */ }
   var sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
   /* ---------- Instantáneas comparables ---------- */
@@ -101,9 +106,46 @@
     return { ok: 'Sincronizado', saving: 'Guardando…', loading: 'Cargando…', offline: 'Sin conexión: los cambios quedan aquí y se suben al volver', readonly: 'Solo lectura' }[status] || '';
   }
   function statusClass() { return status === 'offline' ? 'warn' : status === 'readonly' ? 'muted' : status === 'ok' ? 'good' : ''; }
-  function note(text, ms) {
-    msg = text; var el = bar.querySelector('.cl-msg'); if (el) el.textContent = text;
-    clearTimeout(note.t); if (ms) note.t = setTimeout(function () { msg = ''; var e2 = bar.querySelector('.cl-msg'); if (e2) e2.textContent = ''; }, ms);
+  // Mensaje en la barra y, si está abierta, en la pantalla de inicio de sesión.
+  function note(text, ms, ok) {
+    msg = text;
+    document.querySelectorAll('.cl-msg').forEach(function (el) { el.textContent = text; el.classList.toggle('ok', !!ok); });
+    clearTimeout(note.t);
+    if (ms) note.t = setTimeout(function () { msg = ''; document.querySelectorAll('.cl-msg').forEach(function (el) { el.textContent = ''; }); }, ms);
+  }
+
+  /* ---------- Pantalla de inicio de sesión (lo primero que se ve sin sesión) ---------- */
+  var gate = null, SKIP = 'regear-gate-skip';
+  function skipped() { try { return sessionStorage.getItem(SKIP) === '1'; } catch (e) { return false; } }
+  function showGate() {
+    if (user || skipped()) return hideGate();
+    if (!gate) {
+      gate = document.createElement('div');
+      gate.className = 'gate'; gate.setAttribute('role', 'dialog'); gate.setAttribute('aria-modal', 'true'); gate.setAttribute('aria-labelledby', 'gate-t');
+      gate.innerHTML = '<div class="gate-card"><div class="gate-brand"><img src="icons/icon-192.png" alt="" width="52" height="52"><div><h1 id="gate-t">Regear Albion</h1><p>Builds, cofre y stock de tu gremio, al día para todos.</p></div></div>' +
+        '<form class="gate-form" data-f="login"><label>Correo<input class="pk-q" type="email" name="email" required autocomplete="email" placeholder="tu@correo.com"></label>' +
+        '<label>Contraseña<input class="pk-q" type="password" name="password" autocomplete="current-password" placeholder="La que creaste en la app"></label>' +
+        '<button class="btn primary" type="submit" name="how" value="pass">Entrar</button>' +
+        '<button class="btn" type="submit" name="how" value="link" formnovalidate>Enviarme un enlace de acceso</button></form>' +
+        '<p class="cl-msg" role="status"></p>' +
+        '<p class="gate-note">¿Primera vez o sin contraseña? Pide el enlace: te llega por correo y, ya dentro, creas tu contraseña en «Contraseña».</p>' +
+        '<button class="gate-skip" type="button" data-a="skip">Usar sin cuenta, solo en este navegador</button></div>';
+      gate.addEventListener('submit', onAuthSubmit);
+      gate.addEventListener('click', function (ev) {
+        if (!ev.target.closest('[data-a="skip"]')) return;
+        try { sessionStorage.setItem(SKIP, '1'); } catch (e) { /* sin almacenamiento: solo se cierra */ }
+        hideGate();
+      });
+      document.body.appendChild(gate);
+      var em = gate.querySelector('[name=email]');
+      if (meta.email) em.value = meta.email;
+      (meta.email ? gate.querySelector('[name=password]') : em).focus();
+    }
+    document.documentElement.classList.add('gated', 'lock');
+  }
+  function hideGate() {
+    if (gate) { gate.remove(); gate = null; }
+    document.documentElement.classList.remove('gated', 'lock');
   }
 
   // Cada guardado de la página pasa por aquí: si el gremio está activo, se programa la subida.
@@ -278,7 +320,7 @@
       h += '<form class="cl-f" data-f="login"><label class="cl-lab">Compartir con tu gremio <input class="pk-q sm" type="email" name="email" required placeholder="tu@correo.com" autocomplete="email"></label>' +
         '<input class="pk-q sm" type="password" name="password" placeholder="Contraseña (si ya creaste una)" autocomplete="current-password" aria-label="Contraseña">' +
         '<button class="btn sm primary" type="submit" name="how" value="pass">Entrar</button>' +
-        '<button class="btn sm" type="submit" name="how" value="link" formnovalidate>Enviar enlace por correo</button></form><span class="cl-st muted">Sin sesión: los datos solo están en este navegador.</span>';
+        '<button class="btn sm" type="submit" name="how" value="link" formnovalidate>Enviarme un enlace</button></form><span class="cl-st muted">Sin sesión: los datos solo están en este navegador.</span>';
     } else if (!gid || ui.panel === 'guilds') {
       h += '<span class="cl-who">' + esc(user.email || '') + '</span>' +
         (members.length ? '<select class="sel sm" data-a="pick" aria-label="Tus gremios"><option value="">Elegir gremio…</option>' + members.map(function (m) { return '<option value="' + esc(m.guild_id) + '"' + (m.guild_id === gid ? ' selected' : '') + '>' + esc(m.name) + ' · ' + m.role + '</option>'; }).join('') + '</select>' : '') +
@@ -333,7 +375,8 @@
     }).join('') + '</ul>';
   }
 
-  bar.addEventListener('submit', async function (ev) {
+  bar.addEventListener('submit', onAuthSubmit);
+  async function onAuthSubmit(ev) {
     var f = ev.target.closest('form[data-f]');
     if (!f) return;
     ev.preventDefault();
@@ -344,14 +387,15 @@
       if (f.dataset.f === 'login') {
         var email = String(fd.get('email') || '').trim(), pass = String(fd.get('password') || '');
         if (!email) { note('Escribe tu correo.', 6000); return; }
+        meta.email = email; saveMeta();
         if (how === 'pass') {
-          if (!pass) { note('Escribe tu contraseña, o usa «Enviar enlace por correo».', 8000); return; }
+          if (!pass) { note('Escribe tu contraseña, o pide un enlace de acceso por correo.', 8000); return; }
           var rp = await sb.auth.signInWithPassword({ email: email, password: pass });
           if (rp.error) throw rp.error;
         } else {
           var r = await sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: location.origin + location.pathname } });
           if (r.error) throw r.error;
-          note('Te enviamos un enlace de acceso. Ábrelo en este mismo navegador. Luego crea una contraseña en «Contraseña» para no depender del correo.', 20000);
+          note('Te enviamos un enlace de acceso. Ábrelo en este mismo navegador. Luego crea una contraseña en «Contraseña» para no depender del correo.', 20000, true);
         }
       } else if (f.dataset.f === 'pwd') {
         var np = String(fd.get('password') || '');
@@ -381,7 +425,7 @@
     } catch (e) {
       note(errText(e), 9000);
     } finally { btns.forEach(function (b) { b.disabled = false; }); }
-  });
+  }
   bar.addEventListener('change', async function (ev) {
     var t = ev.target;
     if (t.dataset.a === 'pick' && t.value) { ui.panel = ''; await enterGuild(t.value); }
@@ -435,6 +479,8 @@
       if (gid) await exitGuild();
       await sb.auth.signOut();
       user = null; members = []; ui.panel = ''; render();
+      try { sessionStorage.removeItem(SKIP); } catch (e) { /* sin almacenamiento */ }
+      showGate();
     }
   });
 
@@ -447,7 +493,8 @@
     if ((u && u.id) === (user && user.id)) return;
     user = u;
     if (user) msg = '';
-    if (!user) { leaveChannel(); gid = null; role = null; render(); return; }
+    if (!user) { leaveChannel(); gid = null; role = null; render(); showGate(); return; }
+    hideGate();
     try {
       await loadMembers();
       var want = meta.gid && members.some(function (m) { return m.guild_id === meta.gid; }) ? meta.gid : (members.length === 1 ? members[0].guild_id : null);
@@ -458,6 +505,6 @@
     }
   }
   render();
-  sb.auth.getSession().then(function (r) { onSession(r.data && r.data.session); });
+  sb.auth.getSession().then(function (r) { var s0 = r.data && r.data.session; onSession(s0); if (!s0) showGate(); }, function () { /* sin red: se sigue en modo local */ });
   sb.auth.onAuthStateChange(function (_ev, session) { setTimeout(function () { onSession(session); }, 0); });
 })();
