@@ -799,7 +799,26 @@
   /* ---------- Importar pelea (API gameinfo de Albion) ---------- */
   var GAMEINFO = { west: 'https://gameinfo.albiononline.com', east: 'https://gameinfo-sgp.albiononline.com', europe: 'https://gameinfo-ams.albiononline.com' };
   var GEAR_SLOTS = { MainHand: 'weapon', OffHand: 'offhand', Head: 'head', Armor: 'armor', Shoes: 'shoes', Cape: 'cape' };
-  var bt = { data: null, guild: '', includeSeen: false, entries: [], sel: {}, role: {} };
+  var bt = { data: null, guild: '', includeSeen: false, entries: [], sel: {}, role: {}, q: '' };
+  // Filtro de jugadores del gremio elegido: uno o varios nombres (separados por coma, espacio o salto de línea);
+  // también encuentra por arma. Así se puede pegar la lista de la party y quedarse solo con ellos.
+  function btTerms() { return plain(bt.q).split(/[\s,;]+/).filter(function (t) { return t.length >= 2; }); }
+  function btMatches(e, terms) {
+    if (!terms.length) return true;
+    var w = e.gear.slots.weapon, hay = plain(e.player + ' ' + (w ? nameOf(byKey.get(w.key), w.tier) : ''));
+    return terms.some(function (t) { return hay.indexOf(t) >= 0; });
+  }
+  function btVisible() { var terms = btTerms(); return bt.entries.map(function (e, i) { return [e, i]; }).filter(function (x) { return btMatches(x[0], terms); }); }
+  function renderBtList() {
+    var box = $('#bt-listbox');
+    if (!box) return;
+    var vis = btVisible(), terms = btTerms();
+    box.innerHTML = (terms.length ? '<p class="bt-fsum"><b>' + vis.length + '</b> de ' + bt.entries.length + ' coinciden' +
+        (vis.length ? ' · <button class="btn sm" type="button" data-bt="only">Seleccionar solo estos</button>' : '') + '</p>' : '') +
+      (vis.length ? '<ul class="bt-list">' + vis.map(function (x) { return entryHtml(x[0], x[1]); }).join('') + '</ul>'
+        : '<p class="bt-empty">Ningún jugador coincide con «' + esc(bt.q.trim()) + '».</p>');
+    wireIcons(box);
+  }
 
   function parseItemType(type, slot) {
     var m = /^T(\d)_(.+?)(?:@(\d))?$/.exec(type || '');
@@ -979,9 +998,11 @@
       '<div class="bt-bar"><label>Gremio <select class="sel" id="bt-guild" aria-label="Gremio">' + opts + '</select></label>' +
       '<label><input type="checkbox" id="bt-seen"' + (bt.includeSeen ? ' checked' : '') + '> Incluir a quienes no murieron</label>' +
       '<button class="btn" type="button" data-bt="all">Todos</button><button class="btn" type="button" data-bt="none">Ninguno</button></div>' +
+      (bt.guild && bt.entries.length ? '<input class="pk-q bt-pq" id="bt-pq" type="search" autocomplete="off" value="' + esc(bt.q) + '" placeholder="Filtrar jugadores: uno o varios nombres (o un arma), separados por coma" aria-label="Filtrar jugadores">' : '') +
       (!bt.guild ? '<p class="bt-empty">Elige tu gremio para ver quiénes murieron y con qué equipo.</p>'
-        : bt.entries.length ? '<ul class="bt-list">' + bt.entries.map(entryHtml).join('') + '</ul>'
+        : bt.entries.length ? '<div id="bt-listbox"></div>'
         : '<p class="bt-empty">Nadie de este gremio murió en la pelea. Activa «Incluir a quienes no murieron» para usar el equipo con el que pelearon.</p>');
+    renderBtList();
     wireIcons(body);
     foot.hidden = !bt.guild;
     updateBtFoot();
@@ -1114,7 +1135,7 @@
   function loadBattleData(ids, battles, events) {
     var data = ingest(ids, battles, events);
     if (!data.events) { setBt('La pelea no tiene eventos de muerte para leer.', true); return false; }
-    bt.data = data; bt.guild = ''; bt.sel = {}; bt.role = {};
+    bt.data = data; bt.guild = ''; bt.sel = {}; bt.role = {}; bt.q = '';
     renderBattle();
     setBt('');
     return true;
@@ -1456,19 +1477,25 @@
     var kb = ev.target.closest('[data-kill]');
     if (kb) { openKill(bt.entries[+kb.dataset.kill]); return; }
     if (ev.target.id === 'bt-modal' || ev.target.closest('[data-bt="close"]')) { closeBattle(); return; }
-    var b = ev.target.closest('[data-bt="all"],[data-bt="none"]');
+    var b = ev.target.closest('[data-bt="all"],[data-bt="none"],[data-bt="only"]');
     if (!b) return;
-    var on = b.dataset.bt === 'all';
-    bt.entries.forEach(function (e) { bt.sel[e.uid] = on; });
-    document.querySelectorAll('#bt-body .bt-sel').forEach(function (c) { c.checked = on; });
+    // Con un filtro activo, «Todos» y «Ninguno» afectan solo a los que se ven; «Seleccionar solo estos» deja fuera al resto.
+    var vis = btVisible().map(function (x) { return x[0]; });
+    if (b.dataset.bt === 'only') { bt.entries.forEach(function (e) { bt.sel[e.uid] = vis.indexOf(e) >= 0; }); }
+    else { var on = b.dataset.bt === 'all'; vis.forEach(function (e) { bt.sel[e.uid] = on; }); }
+    document.querySelectorAll('#bt-body .bt-sel').forEach(function (c) { c.checked = bt.sel[bt.entries[+c.dataset.i].uid] !== false; });
     updateBtFoot();
+  });
+  $('#bt-modal').addEventListener('input', function (ev) {
+    if (ev.target.id !== 'bt-pq') return;
+    bt.q = ev.target.value; renderBtList(); // solo se repinta la lista: el campo conserva el foco
   });
   $('#bt-modal').addEventListener('change', function (ev) {
     var t = ev.target;
     if (t.name === 'bt-mode') { $('#bt-add').textContent = t.value === 'kills' ? 'Agregar muertes' : 'Crear builds'; }
     else if (t.classList.contains('bt-sel')) { bt.sel[bt.entries[+t.dataset.i].uid] = t.checked; updateBtFoot(); }
     else if (t.classList.contains('bt-role')) { bt.role[bt.entries[+t.dataset.i].uid] = t.value; updateBtFoot(); }
-    else if (t.id === 'bt-guild') { bt.guild = t.value; if (t.value) { state.prefs.guild = t.value; save(); } renderBattle(); }
+    else if (t.id === 'bt-guild') { bt.guild = t.value; bt.q = ''; if (t.value) { state.prefs.guild = t.value; save(); } renderBattle(); }
     else if (t.id === 'bt-seen') { bt.includeSeen = t.checked; renderBattle(); }
   });
 

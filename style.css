@@ -738,3 +738,8 @@ html.gated body > *:not(.gate) { visibility: hidden; }
 .kb-scan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13px; color: var(--muted); background: var(--wash); }
 .kb-scan span { flex: 1 1 260px; }
 .kb-scan b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* Filtro de jugadores en «Importar pelea» */
+.bt-pq { width: 100%; margin-bottom: 8px; }
+.bt-fsum { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+.bt-fsum b { color: var(--ink); font-variant-numeric: tabular-nums; }
