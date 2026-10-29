@@ -734,3 +734,7 @@ html.gated body > *:not(.gate) { visibility: hidden; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.kb-scan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13px; color: var(--muted); background: var(--wash); }
+.kb-scan span { flex: 1 1 260px; }
+.kb-scan b { color: var(--ink); font-variant-numeric: tabular-nums; }
