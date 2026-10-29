@@ -998,10 +998,22 @@
     return proxyOn;
   }
   function apiBase(server) { return proxyOn ? proxyBase + '/' + server + '/api/gameinfo' : GAMEINFO[server] + '/api/gameinfo'; }
+  // La API de Albion a veces tarda o responde 5xx: se reintenta 2 veces antes de rendirse (un 404 no se reintenta).
   async function getJson(url) {
-    var res = await fetch(url, proxyInit(url));
-    if (!res.ok) { var err = new Error('HTTP ' + res.status); err.status = res.status; throw err; }
-    return res.json();
+    var last;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise(function (r) { setTimeout(r, 1200 * attempt); });
+      try {
+        var res = await fetch(url, proxyInit(url));
+        if (res.ok) return await res.json();
+        last = new Error('HTTP ' + res.status); last.status = res.status;
+        if (res.status < 500 && res.status !== 429) throw last;
+      } catch (e) {
+        if (e.status && e.status < 500 && e.status !== 429) throw e;
+        last = e;
+      }
+    }
+    throw last;
   }
   // Toma el ID del enlace (/battles/ID) e ignora números de parámetros como ?t=1730000000.
   // Reconoce, en cualquier mezcla y cantidad:
@@ -1031,7 +1043,7 @@
     if (!ids.length) { setBt('Escribe el ID o pega el enlace de la pelea (también sirve un multi de AlbionBB).', true); return; }
     var srv = battleServerFromText(text);
     if (srv) setServer(srv);
-    var btn = $('#bt-go'), battles = [], events = [], found = [], missing = [], switched = '';
+    var btn = $('#bt-go'), battles = [], events = [], found = [], missing = [], failed = [], switched = '';
     btn.disabled = true;
     try {
       await detectProxy();
@@ -1046,7 +1058,7 @@
         }
         if (!hit) {
           if (!any404 && lastErr) throw lastErr;
-          missing.push(id);
+          if (lastErr) failed.push(id); else missing.push(id); // con error en algún servidor no se puede asegurar que no exista
           continue;
         }
         if (hit.server !== state.prefs.server) { setServer(hit.server); switched = SERVERS[hit.server]; }
@@ -1063,7 +1075,8 @@
         }
       }
       if (!found.length) {
-        setBt('No encontré la pelea ' + missing.join(', ') + ' en ningún servidor (Américas, Asia ni Europa). Revisa el ID: es el número que va después de /battles/ en el enlace.', true);
+        setBt((failed.length ? 'La API de Albion no respondió para ' + failed.join(', ') + '. Vuelve a intentar en un momento. ' : '') +
+          (missing.length ? 'No encontré la pelea ' + missing.join(', ') + ' en ningún servidor (Américas, Asia ni Europa). Revisa el ID: es el número que va después de /battles/ en el enlace.' : ''), true);
         return;
       }
       if (loadBattleData(found, battles, events)) {
@@ -1071,6 +1084,7 @@
         if (found.length > 1) notes.push(found.length + ' peleas unidas: las muertes repetidas entre ellas se cuentan una vez.');
         if (switched) notes.push((found.length > 1 ? 'Las peleas están' : 'La pelea está') + ' en el servidor ' + switched + '.');
         if (missing.length) notes.push('No encontré: ' + missing.join(', ') + '.');
+        if (failed.length) notes.push('La API de Albion no respondió para ' + failed.join(', ') + ': vuelve a buscar para sumarlas.');
         setBt(notes.join(' '));
       }
     } catch (e) {
