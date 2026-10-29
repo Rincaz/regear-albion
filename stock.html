@@ -46,7 +46,7 @@
     <p class="status" id="sk-status" role="status"></p>
     <details class="pdet sk-log" id="lg">
       <summary>Importar registro del banco (archivo de movimientos)</summary>
-      <p>Sube o pega el registro del banco del gremio (Fecha, Jugador, Objeto, Encantamiento, Calidad, Cantidad). Los depósitos suman y los retiros restan al stock actual. Las líneas ya aplicadas antes se saltan, así que puedes subir registros que se solapan. La calidad se ignora.</p>
+      <p>Sube o pega el registro del banco del gremio (Fecha, Jugador, Objeto, Encantamiento, Calidad, Cantidad). Los depósitos suman y los retiros restan al stock actual. Cada carga se compara con lo ya subido: las líneas repetidas se ignoran (puedes subir registros que se solapan o repetir uno sin duplicar nada) y queda guardado un historial de cargas. La calidad se ignora.</p>
       <div class="sk-dest"><label>Desde (fecha del registro) <input class="pk-q sm" id="lg-since" placeholder="2026-10-29 17:00:00" maxlength="19" autocomplete="off"></label> <label>Lugar <input class="pk-q sm" id="lg-place" list="places" value="Ho Hollow" maxlength="40" autocomplete="off"></label>
         <label>Archivo <input id="lg-file" type="file" accept=".txt,.tsv,.csv,text/plain"></label></div>
       <textarea id="lg-text" rows="5" spellcheck="false" aria-label="Registro del banco"></textarea>

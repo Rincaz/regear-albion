@@ -357,19 +357,36 @@
       net[res.id] = (net[res.id] || 0) + r.qty;
       mv.push([r.date, r.player, res.id, r.qty]);
     });
-    return { lines: p.rows.length, badLines: p.bad, skipped: skipped, net: net, bad: bad, used: used, moves: mv, before: before };
+    var dates = p.rows.map(function (r) { return r.date; }).filter(Boolean).sort();
+    return { lines: p.rows.length, badLines: p.bad, skipped: skipped, net: net, bad: bad, used: used, moves: mv, before: before,
+      from: dates[0] || '', to: dates[dates.length - 1] || '', fresh: p.rows.length - skipped - before };
   }
+  // Historial de cargas: se guarda dentro de logSeen (clave reservada) para que viaje con la nube.
+  var HIST = '#hist';
+  function logHist() { var h = (raw.logSeen || {})[HIST]; return Array.isArray(h) ? h : []; }
+  function histHtml() {
+    var h = logHist();
+    if (!h.length) return '';
+    return '<p class="lg-bad">Cargas anteriores (la última primero):</p><ul class="lg-list">' + h.slice().reverse().slice(0, 12).map(function (e) {
+      return '<li>' + esc(e.at) + ' · registro ' + esc(e.from || '?') + ' → ' + esc(e.to || '?') + ' · ' + e.applied + ' líneas nuevas, ' + e.skipped + ' repetidas · ' + esc(e.place || 'sin lugar') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function nowStamp() { var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
   function renderPlan(pl) {
     var ids = Object.keys(pl.net).filter(function (id) { return pl.net[id] !== 0; });
     ids.sort(function (a, b) { var x = parse(a), y = parse(b); return (y.tier + y.ench) - (x.tier + x.ench) || x.name.localeCompare(y.name); });
     var pos = ids.filter(function (id) { return pl.net[id] > 0; }).length, neg = ids.length - pos;
-    $('#lg-out').innerHTML = '<p class="lg-sum"><b>' + pl.lines + '</b> líneas leídas · <b>' + pl.skipped + '</b> ya aplicadas antes · <b>' + (pl.before || 0) + '</b> anteriores a «Desde» · <b>' + ids.length + '</b> items con movimiento neto (' + pos + ' suben, ' + neg + ' bajan)' +
+    var last = logHist().slice(-1)[0], cmp = '';
+    if (pl.lines && !pl.fresh) cmp = '<p class="lg-bad">Este registro ya está subido por completo: no hay líneas nuevas, no se cargará nada.</p>';
+    else if (pl.skipped) cmp = '<p class="lg-sum">Comparado con lo ya subido: <b>' + pl.skipped + '</b> de ' + pl.lines + ' líneas se repiten y se ignoran; solo se cargan <b>' + pl.fresh + '</b> nuevas.</p>';
+    if (last && pl.from && last.to && pl.to < last.to && pl.fresh) cmp += '<p class="lg-bad">Ojo: hay líneas nuevas con fecha anterior a la última carga (' + esc(last.to) + '). Revisa que no sea otro registro.</p>';
+    $('#lg-out').innerHTML = cmp + '<p class="lg-sum"><b>' + pl.lines + '</b> líneas leídas · <b>' + pl.skipped + '</b> ya aplicadas antes · <b>' + (pl.before || 0) + '</b> anteriores a «Desde» · <b>' + ids.length + '</b> items con movimiento neto (' + pos + ' suben, ' + neg + ' bajan)' +
       (pl.badLines ? ' · ' + pl.badLines + ' líneas ilegibles' : '') + '</p>' +
       (ids.length ? '<ul class="lg-list">' + ids.map(function (id) {
         var e = parse(id), n = pl.net[id];
         return '<li><span class="lg-n ' + (n > 0 ? 'up' : 'down') + '">' + (n > 0 ? '+' : '') + n + '</span> ' + esc(e.name) + ' ' + tagHtml(e.tier, e.ench) + ((stock[id] || 0) + n < 0 ? ' <span class="miss">retira más de lo que hay en stock</span>' : '') + '</li>';
       }).join('') + '</ul>' : '') +
-      (Object.keys(pl.bad).length ? '<p class="lg-bad">Sin reconocer (no se cargan):</p><ul class="lg-list">' + Object.keys(pl.bad).map(function (k) { return '<li>' + esc(k) + ' · ' + pl.bad[k] + '</li>'; }).join('') + '</ul>' : '');
+      (Object.keys(pl.bad).length ? '<p class="lg-bad">Sin reconocer (no se cargan):</p><ul class="lg-list">' + Object.keys(pl.bad).map(function (k) { return '<li>' + esc(k) + ' · ' + pl.bad[k] + '</li>'; }).join('') + '</ul>' : '') + histHtml();
   }
   // Quita primero del lugar indicado, luego de otros lugares y al final de «sin lugar».
   function removeFrom(id, place, n) {
@@ -396,9 +413,12 @@
     moves.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
     var seen = raw.logSeen || (raw.logSeen = {});
     Object.keys(lgPlan.used).forEach(function (sg) { seen[sg] = (seen[sg] || 0) + lgPlan.used[sg]; });
-    var keys = Object.keys(seen); if (keys.length > 20000) keys.slice(0, keys.length - 20000).forEach(function (k) { delete seen[k]; });
+    var hist = logHist().slice(-49);
+    hist.push({ at: nowStamp(), from: lgPlan.from, to: lgPlan.to, lines: lgPlan.lines, applied: lgPlan.fresh, skipped: lgPlan.skipped, place: place });
+    seen[HIST] = hist;
+    var keys = Object.keys(seen).filter(function (k) { return k !== HIST; }); if (keys.length > 20000) keys.slice(0, keys.length - 20000).forEach(function (k) { delete seen[k]; });
     save(); render();
-    $('#lg-out').innerHTML = ''; $('#lg-apply').disabled = true;
+    $('#lg-out').innerHTML = histHtml(); $('#lg-apply').disabled = true;
     flash(n + ' items actualizados y ' + lgPlan.moves.length + ' movimientos registrados en «' + (place || 'sin lugar') + '».', 9000);
   });
 
@@ -562,4 +582,5 @@
   themeLabel();
 
   load(); render();
+  $('#lg-out').innerHTML = histHtml();
 })();
