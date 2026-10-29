@@ -119,5 +119,5 @@ Sin configurar nada, la app funciona igual que antes, con los datos en tu navega
 1. Sube el proyecto a GitHub (sin `dist/` ni `node_modules/`, ya están en `.gitignore`).
 2. En [vercel.com](https://vercel.com) → *Add New → Project* → importa el repositorio. Vercel lee `vercel.json`: ejecuta `npm run build` y publica `dist/`. No hay que tocar la configuración.
 3. La función `api/gameinfo.js` queda en el mismo dominio, así que «Importar pelea» funciona sin `npm start` ni la función de Supabase.
-4. En Supabase → *Authentication → URL Configuration*, agrega a *Redirect URLs* el dominio que te dé Vercel, por ejemplo `https://regear-albion.vercel.app/**` (y ponlo como *Site URL* si será la dirección principal). No uses `https://*.vercel.app/**`: permitiría que cualquier sitio de Vercel recibiera los enlaces de acceso.
+4. En Supabase → *Authentication → URL Configuration*, agrega a *Redirect URLs* el dominio que te dé Vercel, por ejemplo `https://regear-albion-4uw6.vercel.app/**` (la dirección actual de este proyecto) (y ponlo como *Site URL* si será la dirección principal). No uses `https://*.vercel.app/**`: permitiría que cualquier sitio de Vercel recibiera los enlaces de acceso.
 5. Cada `git push` a la rama principal publica una versión nueva; las demás ramas generan una vista previa.
