@@ -17,7 +17,16 @@
   function del(k) { try { rawDel.call(localStorage, k); } catch (e) { /* sin almacenamiento */ } }
   function parse(s, d) { try { var v = JSON.parse(s); return v == null ? d : v; } catch (e) { return d; } }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function errText(e) { return (e && (e.message || e.error_description || e.details)) || String(e); }
+  // Mensajes en español para los errores de inicio de sesión más comunes.
+  function errText(e) {
+    var code = e && (e.code || e.error_code), status = e && e.status;
+    if (code === 'over_email_send_rate_limit' || (status === 429 && /email/i.test(e.message || ''))) return 'Supabase solo permite enviar unos pocos correos por hora en el plan gratis. Espera un rato o entra con tu contraseña.';
+    if (code === 'invalid_credentials') return 'Correo o contraseña incorrectos. Si nunca creaste una contraseña, entra con el enlace y créala en «Contraseña».';
+    if (code === 'weak_password') return 'La contraseña es muy débil: usa al menos 8 caracteres.';
+    if (code === 'same_password') return 'Esa ya es tu contraseña actual.';
+    if (code === 'over_request_rate_limit' || status === 429) return 'Demasiados intentos seguidos. Espera un minuto y vuelve a probar.';
+    return (e && (e.message || e.error_description || e.details)) || String(e);
+  }
 
   if (!CFG.supabaseUrl || !CFG.supabaseAnonKey) return; // Sin configurar: modo solo local.
   var bar = document.getElementById('cloud-bar');
@@ -267,14 +276,17 @@
     var h = '<span class="cl-ico" aria-hidden="true">☁</span>';
     if (!user) {
       h += '<form class="cl-f" data-f="login"><label class="cl-lab">Compartir con tu gremio <input class="pk-q sm" type="email" name="email" required placeholder="tu@correo.com" autocomplete="email"></label>' +
-        '<button class="btn sm primary" type="submit">Enviar enlace de acceso</button></form><span class="cl-st muted">Sin sesión: los datos solo están en este navegador.</span>';
+        '<input class="pk-q sm" type="password" name="password" placeholder="Contraseña (si ya creaste una)" autocomplete="current-password" aria-label="Contraseña">' +
+        '<button class="btn sm primary" type="submit" name="how" value="pass">Entrar</button>' +
+        '<button class="btn sm" type="submit" name="how" value="link" formnovalidate>Enviar enlace por correo</button></form><span class="cl-st muted">Sin sesión: los datos solo están en este navegador.</span>';
     } else if (!gid || ui.panel === 'guilds') {
       h += '<span class="cl-who">' + esc(user.email || '') + '</span>' +
         (members.length ? '<select class="sel sm" data-a="pick" aria-label="Tus gremios"><option value="">Elegir gremio…</option>' + members.map(function (m) { return '<option value="' + esc(m.guild_id) + '"' + (m.guild_id === gid ? ' selected' : '') + '>' + esc(m.name) + ' · ' + m.role + '</option>'; }).join('') + '</select>' : '') +
         '<form class="cl-f" data-f="create"><input class="pk-q sm" name="name" required maxlength="60" placeholder="Nombre del gremio"><input class="pk-q sm" name="me" maxlength="40" placeholder="Tu nombre en el juego" value="' + esc(meta.me || '') + '"><button class="btn sm" type="submit">Crear gremio</button></form>' +
         '<form class="cl-f" data-f="join"><input class="pk-q sm" name="code" required maxlength="20" placeholder="Código de invitación"><input class="pk-q sm" name="me" maxlength="40" placeholder="Tu nombre en el juego" value="' + esc(meta.me || '') + '"><button class="btn sm" type="submit">Unirme</button></form>' +
         (gid ? '<button class="btn sm" type="button" data-a="back">Volver al gremio</button>' : '') +
-        '<button class="btn sm" type="button" data-a="logout">Cerrar sesión</button>';
+        '<button class="btn sm" type="button" data-a="pwd" aria-expanded="' + (ui.panel === 'pwd') + '">Contraseña</button>' +
+        '<button class="btn sm" type="button" data-a="logout">Cerrar sesión</button>' + pwdPanel();
     } else {
       var cur = current() || {};
       h += '<b class="cl-g">' + esc(cur.name || 'Gremio') + '</b><span class="cl-role r-' + esc(role || '') + '">' + esc({ admin: 'Admin', editor: 'Editor', viewer: 'Solo lectura' }[role] || role || '') + '</span>' +
@@ -284,7 +296,8 @@
         '<button class="btn sm" type="button" data-a="members" aria-expanded="' + (ui.panel === 'members') + '">Miembros</button>' +
         (get(BACKUP) && canEdit() ? '<button class="btn sm" type="button" data-a="upload" title="Reemplaza los datos del gremio con los que tenías en este navegador antes de conectarte">Subir mis datos locales</button>' : '') +
         '<button class="btn sm" type="button" data-a="guilds">Otro gremio</button>' +
-        '<button class="btn sm" type="button" data-a="logout">Cerrar sesión</button></span>';
+        '<button class="btn sm" type="button" data-a="pwd" aria-expanded="' + (ui.panel === 'pwd') + '">Contraseña</button>' +
+        '<button class="btn sm" type="button" data-a="logout">Cerrar sesión</button></span>' + pwdPanel();
       if (ui.panel === 'invite') {
         h += '<div class="cl-panel">Comparte este código: <code class="cl-code">' + esc(cur.invite || '') + '</code> <button class="btn sm" type="button" data-a="copy">Copiar</button>' +
           (role === 'admin' ? ' <button class="btn sm" type="button" data-a="rotate">Nuevo código</button>' : '') +
@@ -295,6 +308,15 @@
     h += '<span class="cl-msg" role="status">' + esc(msg) + '</span>';
     bar.innerHTML = h;
     if (ui.panel === 'members' && gid) renderMembers();
+  }
+  // Con contraseña se entra sin esperar correos (el plan gratis de Supabase limita los envíos por hora).
+  function pwdPanel() {
+    if (ui.panel !== 'pwd') return '';
+    return '<div class="cl-panel"><form class="cl-f" data-f="pwd"><input type="email" name="email" value="' + esc(user.email || '') + '" autocomplete="username" hidden>' +
+      '<input class="pk-q sm" type="password" name="password" required minlength="8" placeholder="Nueva contraseña (mín. 8)" autocomplete="new-password" aria-label="Nueva contraseña">' +
+      '<input class="pk-q sm" type="password" name="again" required minlength="8" placeholder="Repítela" autocomplete="new-password" aria-label="Repetir contraseña">' +
+      '<button class="btn sm primary" type="submit">Guardar contraseña</button></form>' +
+      '<span class="hint">Después podrás entrar con tu correo y esta contraseña, en cualquier dirección de la app, sin esperar el enlace.</span></div>';
   }
   async function renderMembers() {
     var box = bar.querySelector('#cl-members');
@@ -315,13 +337,29 @@
     var f = ev.target.closest('form[data-f]');
     if (!f) return;
     ev.preventDefault();
-    var fd = new FormData(f), btn = f.querySelector('button');
-    btn.disabled = true;
+    var fd = new FormData(f), btns = Array.prototype.slice.call(f.querySelectorAll('button'));
+    var how = ev.submitter && ev.submitter.value;
+    btns.forEach(function (b) { b.disabled = true; });
     try {
       if (f.dataset.f === 'login') {
-        var r = await sb.auth.signInWithOtp({ email: String(fd.get('email')).trim(), options: { emailRedirectTo: location.origin + location.pathname } });
-        if (r.error) throw r.error;
-        note('Te enviamos un enlace de acceso. Ábrelo en este mismo navegador.', 15000);
+        var email = String(fd.get('email') || '').trim(), pass = String(fd.get('password') || '');
+        if (!email) { note('Escribe tu correo.', 6000); return; }
+        if (how === 'pass') {
+          if (!pass) { note('Escribe tu contraseña, o usa «Enviar enlace por correo».', 8000); return; }
+          var rp = await sb.auth.signInWithPassword({ email: email, password: pass });
+          if (rp.error) throw rp.error;
+        } else {
+          var r = await sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: location.origin + location.pathname } });
+          if (r.error) throw r.error;
+          note('Te enviamos un enlace de acceso. Ábrelo en este mismo navegador. Luego crea una contraseña en «Contraseña» para no depender del correo.', 20000);
+        }
+      } else if (f.dataset.f === 'pwd') {
+        var np = String(fd.get('password') || '');
+        if (np !== String(fd.get('again') || '')) { note('Las contraseñas no coinciden.', 6000); return; }
+        var ru = await sb.auth.updateUser({ password: np });
+        if (ru.error) throw ru.error;
+        ui.panel = ''; render();
+        note('Contraseña guardada. Ya puedes entrar con correo y contraseña.', 9000);
       } else {
         var me = String(fd.get('me') || '').trim().slice(0, 40);
         meta.me = me; saveMeta();
@@ -342,7 +380,7 @@
       }
     } catch (e) {
       note(errText(e), 9000);
-    } finally { btn.disabled = false; }
+    } finally { btns.forEach(function (b) { b.disabled = false; }); }
   });
   bar.addEventListener('change', async function (ev) {
     var t = ev.target;
@@ -364,7 +402,7 @@
     var b = ev.target.closest('button[data-a]');
     if (!b) return;
     var a = b.dataset.a;
-    if (a === 'invite' || a === 'members') { ui.panel = ui.panel === a ? '' : a; render(); }
+    if (a === 'invite' || a === 'members' || a === 'pwd') { ui.panel = ui.panel === a ? '' : a; render(); }
     else if (a === 'guilds') { ui.panel = 'guilds'; render(); }
     else if (a === 'back') { ui.panel = ''; render(); }
     else if (a === 'copy') {
@@ -408,6 +446,7 @@
     var u = session ? session.user : null;
     if ((u && u.id) === (user && user.id)) return;
     user = u;
+    if (user) msg = '';
     if (!user) { leaveChannel(); gid = null; role = null; render(); return; }
     try {
       await loadMembers();
