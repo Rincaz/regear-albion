@@ -1273,7 +1273,18 @@
     try {
       await detectProxy();
       if (!proxyOn) throw new Error('sin puente');
-      var r = await getJson(apiBase(state.prefs.server) + '/search?q=' + encodeURIComponent(q)), out = [], ids = {};
+      // La búsqueda de la API es irregular con espacios: se prueba %20, «+» y, si no hay nada, la palabra más larga.
+      var base = apiBase(state.prefs.server) + '/search?q=', out = [], ids = {}, r = { guilds: [], players: [] };
+      var tries = [encodeURIComponent(q)], longest = q.split(/\s+/).sort(function (a, b) { return b.length - a.length; })[0];
+      if (/\s/.test(q)) tries.push(q.split(/\s+/).map(encodeURIComponent).join('+'));
+      if (longest && longest !== q && longest.length >= 3) tries.push(encodeURIComponent(longest));
+      for (var t = 0; t < tries.length; t++) {
+        var part = await getJson(base + tries[t]).catch(function () { return {}; });
+        r.guilds = r.guilds.concat(part.guilds || []); r.players = r.players.concat(part.players || []);
+        if (r.guilds.length && t >= Math.min(1, tries.length - 1)) break;
+      }
+      var lq = q.toLowerCase();
+      r.guilds.sort(function (a, b) { return (String(b.Name).toLowerCase() === lq) - (String(a.Name).toLowerCase() === lq); });
       (r.guilds || []).forEach(function (x) { if (x.Id && !ids[x.Id]) { ids[x.Id] = 1; out.push({ id: x.Id, name: x.Name, alliance: x.AllianceName || '' }); } });
       // Si se buscó a un jugador, se ofrece su gremio.
       (r.players || []).forEach(function (x) { if (x.GuildId && !ids[x.GuildId]) { ids[x.GuildId] = 1; out.push({ id: x.GuildId, name: x.GuildName, alliance: x.AllianceName || '', via: 'gremio de ' + x.Name }); } });
