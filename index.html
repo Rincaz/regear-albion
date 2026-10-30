@@ -30,6 +30,7 @@
           <button class="btn" id="regear-done" type="button" title="Descuenta del stock todos los items de las builds y limpia las builds">Reequip listo</button>
           <button class="btn danger" id="clear-builds" type="button">Limpiar builds</button>
           <button class="btn" id="bt-open" type="button">Importar pelea</button>
+          <button class="btn" id="sh-open" type="button" title="Pega una captura de «Detalles de asesinato» y el equipo se reconoce solo">Desde captura</button>
           <button class="btn primary" id="add" type="button">+ Nueva build / guía</button>
         </div>
       </div>
@@ -124,6 +125,29 @@
   <button class="seg" type="button" data-view="builds" aria-pressed="true">Builds</button>
   <button class="seg" type="button" data-view="chest" aria-pressed="false">Cofre<b id="mb-count">0</b></button>
 </nav>
+
+<div class="overlay" id="sh-modal" hidden>
+  <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="sh-title">
+    <div class="pk-head">
+      <h2 id="sh-title">Equipo desde una captura</h2>
+      <button class="btn" type="button" data-sh="close">Cerrar</button>
+    </div>
+    <div class="sh-body">
+      <label class="sh-drop" id="sh-drop" tabindex="0">
+        <input type="file" id="sh-file" accept="image/*" hidden>
+        <b>Pega aquí la captura</b> (Ctrl+V), arrástrala o haz clic para elegir un archivo.
+        <small>Sirve la pantalla «Detalles de asesinato» del juego. Se usa el equipo del lado que marques.</small>
+      </label>
+      <p class="status" id="sh-status" role="status"></p>
+      <div class="sh-stage" id="sh-stage" hidden>
+        <canvas id="sh-canvas" aria-label="Captura: haz clic para marcar las casillas"></canvas>
+        <p class="hint" id="sh-step"></p>
+        <div class="m-actions"><button class="btn" type="button" data-sh="redo">Volver a marcar</button></div>
+      </div>
+      <div id="sh-out"></div>
+    </div>
+  </div>
+</div>
 
 <div class="overlay" id="bt-modal" hidden>
   <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="bt-title">
