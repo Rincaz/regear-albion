@@ -1321,6 +1321,258 @@
     save(); closeBattle(); renderAll();
     flash('#top-status', made.length + (made.length === 1 ? ' build creada' : ' builds creadas') + ' para ' + people + (people === 1 ? ' regear' : ' regears') + ' (' + bt.guild + ').', 8000);
   }
+  /* ---------- Equipo desde una captura de «Detalles de asesinato» ---------- */
+  // El usuario marca dos casillas (cabeza y botas) y de ahí sale la cuadrícula. Cada casilla se compara con los iconos
+  // oficiales (shot-icons.js, se carga solo al usarlo): el icono ya trae el color del tier, así que además del item se lee el tier.
+  var SH_S = 32;
+  var SH_CELLS = [{ slot: 'head', c: 0, r: 0 }, { slot: 'cape', c: 1, r: 0 }, { slot: 'weapon', c: -1, r: 1 }, { slot: 'armor', c: 0, r: 1 }, { slot: 'offhand', c: 1, r: 1 }, { slot: 'shoes', c: 0, r: 2 }];
+  var sh = { img: null, pts: [], grid: null, rows: null, name: '', token: 0 };
+  var shIcons = null, shLoading = null, shBySlot = null, shW = null, shCv = null, shCtx = null;
+  var SH_EMPTY_STD = 30;
+
+  function shStatus(msg, err) { var s = $('#sh-status'); s.textContent = msg || ''; s.classList.toggle('err', !!err); }
+  function shWeights() {
+    var w = [], S = SH_S;
+    for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+      var ok = (x >= 5 && x < 27 && y >= 5 && y < 24 && !(x < 12 && y < 12) && !(x >= 22 && y < 10) && !(x >= 18 && y >= 20)) ||
+        (x >= 2 && x < 9 && y >= 2 && y < 9); // la esquina con la insignia del tier también cuenta: su color es el del tier
+      if (ok) w.push((y * S + x) * 4);
+    }
+    return w;
+  }
+  function shLoadIcons() {
+    if (shIcons) return Promise.resolve();
+    if (shLoading) return shLoading;
+    shLoading = new Promise(function (ok, bad) {
+      var s = document.createElement('script'); s.src = 'shot-icons.js';
+      s.onload = ok; s.onerror = function () { shLoading = null; bad(new Error('No se pudieron cargar los iconos de referencia.')); };
+      document.head.appendChild(s);
+    }).then(function () {
+      var ids = Object.keys(window.ALBION_ICONS || {}), cv = document.createElement('canvas'), cx;
+      cv.width = cv.height = SH_S; cx = cv.getContext('2d', { willReadFrequently: true });
+      shIcons = {}; shBySlot = {};
+      return Promise.all(ids.map(function (id) {
+        var m = /^T(\d)_(.+)$/.exec(id), def = m && byKey.get(m[2]);
+        if (!def) return null;
+        return new Promise(function (res) {
+          var im = new Image();
+          im.onload = function () { res([id, im, def, +m[1], m[2]]); };
+          im.onerror = function () { res(null); };
+          im.src = 'data:image/jpeg;base64,' + window.ALBION_ICONS[id];
+        });
+      })).then(function (all) {
+        all.forEach(function (a) {
+          if (!a) return;
+          cx.clearRect(0, 0, SH_S, SH_S); cx.drawImage(a[1], 0, 0, SH_S, SH_S);
+          (shBySlot[a[2].slot] = shBySlot[a[2].slot] || []).push({ id: a[0], key: a[4], tier: a[3], px: cx.getImageData(0, 0, SH_S, SH_S).data });
+        });
+        shIcons = true; window.ALBION_ICONS = null;
+      });
+    });
+    return shLoading;
+  }
+  function shCell(cx, cy, pitch, frac, dx, dy) {
+    var h = pitch * frac / 2;
+    shCtx.clearRect(0, 0, SH_S, SH_S);
+    shCtx.drawImage(sh.img, cx + dx - h, cy + dy - h, 2 * h, 2 * h, 0, 0, SH_S, SH_S);
+    return shCtx.getImageData(0, 0, SH_S, SH_S).data;
+  }
+  function shDist(a, b) {
+    var t = 0;
+    for (var i = 0; i < shW.length; i++) {
+      var o = shW[i], r = a[o] - b[o], g = a[o + 1] - b[o + 1], bl = a[o + 2] - b[o + 2];
+      t += Math.sqrt(r * r + g * g + bl * bl);
+    }
+    return t / shW.length;
+  }
+  // Casilla vacía: sin icono dentro, el interior casi no varía (en el juego se ve un dibujo apagado).
+  function shInnerStd(px) {
+    var v = [], m = 0, s = 0, S = SH_S;
+    for (var y = 4; y < 28; y++) for (var x = 4; x < 28; x++) { var o = (y * S + x) * 4; v.push(0.299 * px[o] + 0.587 * px[o + 1] + 0.114 * px[o + 2]); }
+    v.forEach(function (x) { m += x; }); m /= v.length;
+    v.forEach(function (x) { s += (x - m) * (x - m); });
+    return Math.sqrt(s / v.length);
+  }
+  // Encantamiento: color del brillo del borde (verde .1, azul .2, morado .3). Es una pista; se puede corregir en la lista.
+  function shEnch(cx, cy, pitch) {
+    var n = Math.max(24, Math.round(pitch * 1.12)), h = n / 2, c = document.createElement('canvas');
+    c.width = c.height = n;
+    var x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(sh.img, cx - h, cy - h, n, n, 0, 0, n, n);
+    var d = x.getImageData(0, 0, n, n).data, cnt = [0, 0, 0, 0], total = 0;
+    for (var yy = 0; yy < n; yy++) for (var xx = 0; xx < n; xx++) {
+      var r = Math.max(Math.abs(xx + .5 - h), Math.abs(yy + .5 - h)) / pitch;
+      if (r <= 0.43 || r >= 0.54) continue;
+      total++;
+      var o = (yy * n + xx) * 4, R = d[o] / 255, G = d[o + 1] / 255, B = d[o + 2] / 255, mx = Math.max(R, G, B), mn = Math.min(R, G, B), s = mx ? (mx - mn) / mx : 0;
+      if (s < 0.47 || mx < 0.47) continue;
+      var hue = mx === R ? ((G - B) / (mx - mn) + 6) % 6 : mx === G ? (B - R) / (mx - mn) + 2 : (R - G) / (mx - mn) + 4;
+      hue *= 60;
+      if (hue >= 85 && hue <= 160) cnt[1]++; else if (hue >= 185 && hue <= 250) cnt[2]++; else if (hue >= 251 && hue <= 310) cnt[3]++;
+    }
+    var best = 0, bv = 0, sec = 0;
+    [1, 2, 3].forEach(function (e) { if (cnt[e] > bv) { sec = bv; bv = cnt[e]; best = e; } else if (cnt[e] > sec) sec = cnt[e]; });
+    return bv >= total * 0.012 && bv >= sec * 1.5 ? best : 0;
+  }
+  function shMatchCell(cell, grid) {
+    var cx = grid.x + cell.c * grid.pitch, cy = grid.y + cell.r * grid.pitch, p = grid.pitch, cands = shBySlot[cell.slot] || [];
+    var crops = [], d = p * 0.03;
+    [0.80, 0.86, 0.92].forEach(function (f) { [-1, 0, 1].forEach(function (ix) { [-1, 0, 1].forEach(function (iy) { crops.push(shCell(cx, cy, p, f, ix * d, iy * d)); }); }); });
+    var base = shCell(cx, cy, p, 0.86, 0, 0), empty = shInnerStd(base) < SH_EMPTY_STD, bestByKey = {};
+    cands.forEach(function (c) {
+      var s = 1e9;
+      for (var i = 0; i < crops.length; i++) { var v = shDist(crops[i], c.px); if (v < s) s = v; }
+      var cur = bestByKey[c.key];
+      if (!cur || s < cur.score) bestByKey[c.key] = { key: c.key, tier: c.tier, score: s };
+    });
+    var list = Object.keys(bestByKey).map(function (k) { return bestByKey[k]; }).sort(function (a, b) { return a.score - b.score; }).slice(0, 8);
+    // Imagen de la casilla para mostrarla junto al resultado.
+    var tc = document.createElement('canvas'); tc.width = tc.height = 56;
+    tc.getContext('2d').drawImage(sh.img, cx - p * .5, cy - p * .5, p, p, 0, 0, 56, 56);
+    return { slot: cell.slot, thumb: tc.toDataURL('image/jpeg', 0.85), cands: list, empty: empty, ench: empty ? 0 : shEnch(cx, cy, p),
+      pick: empty || !list.length ? null : { key: list[0].key, tier: list[0].tier } };
+  }
+  function shRunDetect() {
+    var my = ++sh.token;
+    shStatus('Analizando la captura…');
+    shLoadIcons().then(function () {
+      if (my !== sh.token) return;
+      shW = shWeights(); shCv = document.createElement('canvas'); shCv.width = shCv.height = SH_S; shCtx = shCv.getContext('2d', { willReadFrequently: true });
+      shCtx.imageSmoothingQuality = 'high';
+      sh.rows = SH_CELLS.map(function (c) { return shMatchCell(c, sh.grid); });
+      sh.rows.forEach(function (r) {
+        if (r.pick) { var def = byKey.get(r.pick.key); if (!hasEnch(def, r.ench)) r.ench = 0; }
+      });
+      shStatus('');
+      shRenderOut();
+      var o = $('#sh-out'); if (o && o.scrollIntoView) o.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }).catch(function (e) { shStatus(e && e.message || 'No se pudo analizar la captura.', true); });
+  }
+  function shTiersOf(def) { var out = []; for (var t = 1; t <= 8; t++) if (hasTier(def, t)) out.push(t); return out; }
+  function shRowHtml(r) {
+    var sel = r.pick, def = sel && byKey.get(sel.key), nm = def ? nameOf(def, sel.tier) : '';
+    var items = '<option value="">— vacío —</option>' + r.cands.map(function (c) {
+      var d = byKey.get(c.key);
+      return '<option value="' + esc(c.key) + '"' + (sel && sel.key === c.key ? ' selected' : '') + '>' + esc(nameOf(d, c.tier)) + '</option>';
+    }).join('');
+    var tiers = def ? shTiersOf(def).map(function (t) { return '<option value="' + t + '"' + (t === sel.tier ? ' selected' : '') + '>T' + t + '</option>'; }).join('') : '';
+    var ench = def ? [0, 1, 2, 3, 4].filter(function (e) { return hasEnch(def, e); }).map(function (e) { return '<option value="' + e + '"' + (e === r.ench ? ' selected' : '') + '>.' + e + '</option>'; }).join('') : '';
+    return '<li class="sh-row' + (sel ? '' : ' none') + '" data-slot="' + r.slot + '">' +
+      '<span class="sh-lab">' + esc(SLOT_LABEL[r.slot]) + '</span>' +
+      '<img class="sh-thumb" src="' + r.thumb + '" alt="Casilla de ' + esc(SLOT_LABEL[r.slot]) + ' en la captura" width="56" height="56">' +
+      '<span class="sh-arrow">→</span>' +
+      '<span class="sh-ic">' + (sel ? iconHtml(itemId(sel.key, sel.tier, r.ench), nm, true) : '') + '</span>' +
+      '<span class="sh-pick"><select class="sel" data-sh="item" aria-label="Item de ' + esc(SLOT_LABEL[r.slot]) + '">' + items + '</select>' +
+      (def ? '<span class="sh-te"><select class="sel" data-sh="tier" aria-label="Tier">' + tiers + '</select><select class="sel" data-sh="ench" aria-label="Encantamiento">' + ench + '</select></span>' : '') + '</span></li>';
+  }
+  function shRenderOut() {
+    var box = $('#sh-out');
+    if (!sh.rows) { box.innerHTML = ''; return; }
+    var list = '<ul class="sh-list">' + sh.rows.map(shRowHtml).join('') + '</ul>';
+    box.innerHTML = '<p class="hint">Revisa cada casilla: el reconocimiento es una ayuda. El tier sale del color del marco y el encantamiento del brillo del borde (verde .1, azul .2, morado .3); si algo no coincide, cámbialo aquí.</p>' + list +
+      '<div class="sh-add"><label>Jugador <input class="pk-q sm" id="sh-name" type="text" maxlength="40" autocomplete="off" placeholder="Nombre (opcional)" value="' + esc(sh.name) + '"></label>' +
+      '<button class="btn primary" type="button" data-sh="add">Agregar al regear</button></div>';
+    wireIcons(box);
+  }
+  function shDraw() {
+    var cv = $('#sh-canvas'), x = cv.getContext('2d');
+    x.drawImage(sh.img, 0, 0);
+    var lw = Math.max(2, cv.width / 400), r = Math.max(6, cv.width / 120);
+    x.lineWidth = lw; x.strokeStyle = '#ff2d55'; x.fillStyle = 'rgba(255,45,85,.9)';
+    sh.pts.forEach(function (p) { x.beginPath(); x.arc(p.x, p.y, r, 0, 7); x.fill(); });
+    if (sh.grid) {
+      var g = sh.grid, h = g.pitch * 0.46;
+      SH_CELLS.forEach(function (c) { x.strokeRect(g.x + c.c * g.pitch - h, g.y + c.r * g.pitch - h, 2 * h, 2 * h); });
+    }
+  }
+  function shStep() {
+    var s = $('#sh-step');
+    s.textContent = sh.grid ? 'Casillas marcadas. Si los cuadros no calzan con el equipo, pulsa «Volver a marcar».'
+      : sh.pts.length === 0 ? 'Paso 1 de 2: haz clic en el centro de la casilla de la CABEZA (la de arriba, al medio) del equipo que quieres leer.'
+      : 'Paso 2 de 2: haz clic en el centro de las BOTAS (dos casillas más abajo, en la misma columna).';
+  }
+  function shLoadImage(blob) {
+    if (!blob || !/^image\//.test(blob.type)) { shStatus('Eso no es una imagen.', true); return; }
+    var url = URL.createObjectURL(blob), im = new Image();
+    im.onload = function () {
+      URL.revokeObjectURL(url);
+      sh.img = im; sh.pts = []; sh.grid = null; sh.rows = null; sh.token++;
+      var cv = $('#sh-canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+      $('#sh-stage').hidden = false; shStatus(''); shDraw(); shStep(); shRenderOut();
+    };
+    im.onerror = function () { URL.revokeObjectURL(url); shStatus('No se pudo leer la imagen.', true); };
+    im.src = url;
+  }
+  function openShot() {
+    $('#sh-modal').hidden = false; document.documentElement.classList.add('lock');
+    $('#sh-drop').focus();
+  }
+  function closeShot() { $('#sh-modal').hidden = true; document.documentElement.classList.remove('lock'); sh.token++; }
+  function shAdd() {
+    var slots = {}, name = ($('#sh-name').value || '').trim().slice(0, 40);
+    sh.rows.forEach(function (r) { if (r.pick) slots[r.slot] = { key: r.pick.key, tier: r.pick.tier, ench: r.ench, qty: 1 }; });
+    var probe = cleanBuild({ name: 'x', slots: slots });
+    if (!Object.keys(probe.slots).length) { shStatus('No hay ningún item para agregar.', true); return; }
+    var sig = function (b) { return SLOTS.map(function (s) { var it = b.slots[s.id]; return it ? it.key + ':' + it.tier + ':' + it.ench : '-'; }).join('|'); };
+    var same = state.builds.filter(function (b) { return sig(b) === sig(probe); })[0];
+    if (same) {
+      if (same.players < 99) { same.players++; if (name) { same.members = (same.members || []).concat([name]).slice(0, 99); } }
+    } else {
+      var w = probe.slots.weapon, base = w ? nameOf(byKey.get(w.key), w.tier) + ' ' + tagText(w.tier, w.ench) : 'Build', nm = base, i = 1, used = {};
+      state.builds.forEach(function (b) { used[b.name] = true; });
+      while (used[nm]) { i++; nm = base + ' (' + i + ')'; }
+      state.builds.push(cleanBuild({ name: nm, role: guessRole(probe.slots), players: 1, slots: slots, members: name ? [name] : undefined }));
+    }
+    state.prefs.mode = 'builds';
+    save(); renderAll(); closeShot();
+    flash('#top-status', 'Se agregó ' + (name || 'el equipo') + ' al regear' + (same ? ' (build «' + same.name + '»)' : '') + '.', 7000);
+  }
+  $('#sh-open').addEventListener('click', openShot);
+  $('#sh-modal').addEventListener('click', function (ev) {
+    if (ev.target === $('#sh-modal')) { closeShot(); return; }
+    var b = ev.target.closest('[data-sh]');
+    if (!b || b.tagName === 'SELECT') return;
+    if (b.dataset.sh === 'close') closeShot();
+    else if (b.dataset.sh === 'redo') { sh.pts = []; sh.grid = null; sh.rows = null; sh.token++; shDraw(); shStep(); shRenderOut(); shStatus(''); }
+    else if (b.dataset.sh === 'add') shAdd();
+  });
+  $('#sh-modal').addEventListener('change', function (ev) {
+    var t = ev.target, li = t.closest && t.closest('.sh-row');
+    if (!li || !t.dataset.sh || !sh.rows) return;
+    var r = sh.rows.filter(function (x) { return x.slot === li.dataset.slot; })[0];
+    if (t.dataset.sh === 'item') {
+      if (!t.value) r.pick = null;
+      else { var c = r.cands.filter(function (x) { return x.key === t.value; })[0]; r.pick = { key: t.value, tier: c ? c.tier : 8 }; if (!hasEnch(byKey.get(t.value), r.ench)) r.ench = 0; }
+    } else if (t.dataset.sh === 'tier') r.pick.tier = +t.value;
+    else if (t.dataset.sh === 'ench') r.ench = +t.value;
+    var keep = $('#sh-name') ? $('#sh-name').value : ''; sh.name = keep; shRenderOut();
+  });
+  $('#sh-modal').addEventListener('input', function (ev) { if (ev.target.id === 'sh-name') sh.name = ev.target.value; });
+  $('#sh-file').addEventListener('change', function (ev) { shLoadImage(ev.target.files && ev.target.files[0]); ev.target.value = ''; });
+  $('#sh-drop').addEventListener('dragover', function (ev) { ev.preventDefault(); });
+  $('#sh-drop').addEventListener('drop', function (ev) { ev.preventDefault(); shLoadImage(ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0]); });
+  $('#sh-canvas').addEventListener('click', function (ev) {
+    if (!sh.img || sh.grid) return;
+    var cv = ev.currentTarget, rc = cv.getBoundingClientRect(), k = cv.width / rc.width;
+    sh.pts.push({ x: (ev.clientX - rc.left) * k, y: (ev.clientY - rc.top) * k });
+    if (sh.pts.length === 2) {
+      var a = sh.pts[0], b = sh.pts[1], pitch = (b.y - a.y) / 2;
+      if (pitch < 12) { sh.pts = []; shStatus('Las botas van debajo de la cabeza: vuelve a marcar las dos casillas.', true); shDraw(); shStep(); return; }
+      sh.grid = { x: (a.x + b.x) / 2, y: a.y, pitch: pitch };
+      shStatus(''); shDraw(); shStep(); shRunDetect();
+    } else { shStatus(''); shDraw(); shStep(); }
+  });
+  // Pegar una imagen (Ctrl+V) en cualquier parte de la página abre este panel.
+  document.addEventListener('paste', function (ev) {
+    var items = ev.clipboardData && ev.clipboardData.items, f = null;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) if (items[i].kind === 'file' && /^image\//.test(items[i].type)) { f = items[i].getAsFile(); break; }
+    if (!f) return;
+    ev.preventDefault();
+    if ($('#sh-modal').hidden) openShot();
+    shLoadImage(f);
+  });
+
   /* ---------- Ver quién lo mató ---------- */
   var KILL_GRID = [['Bag', 'Head', 'Cape'], ['MainHand', 'Armor', 'OffHand'], ['Potion', 'Shoes', 'Food'], [null, 'Mount', null]];
   function typeInfo(type) {
@@ -1653,7 +1905,7 @@
   $('#pk-q').addEventListener('input', function (ev) { picker.q = ev.target.value; renderPickerList(); });
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
-    if (!$('#kill-modal').hidden) closeKill(); else if (picker) closePicker(true); else if (!$('#bt-modal').hidden) closeBattle();
+    if (!$('#kill-modal').hidden) closeKill(); else if (picker) closePicker(true); else if (!$('#sh-modal').hidden) closeShot(); else if (!$('#bt-modal').hidden) closeBattle();
   });
 
   document.querySelectorAll('.mbar .seg').forEach(function (btn) {
